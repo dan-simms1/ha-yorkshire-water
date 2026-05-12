@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Yorkshire Water (community integration) icon. Unofficial; not the
+       Yorkshire Water Services Ltd logo. -->
+
+  <!-- Rounded-square background in deep water-blue. -->
+  <rect width="256" height="256" rx="48" ry="48" fill="#1B4F7E"/>
+
+  <!-- White water drop. -->
+  <path d="M 128 40
+           C 80 80, 60 120, 60 160
+           A 68 68 0 1 0 196 160
+           C 196 120, 176 80, 128 40 Z"
+        fill="#FFFFFF"/>
+
+  <!-- Heraldic rose, centred at (128, 158). Five rounded petals plus
+       five thin sepals between them, all in deep blue. -->
+  <g transform="translate(128 158)" fill="#1B4F7E">
+
+    <!-- Sepals first (so petals draw over them). Five thin teardrops
+         pointing outward at 36°, 108°, 180°, 252°, 324°. -->
+    <g>
+      <path d="M 0 -42 C 4 -34, 4 -28, 0 -22 C -4 -28, -4 -34, 0 -42 Z"
+            transform="rotate(36)"/>
+      <path d="M 0 -42 C 4 -34, 4 -28, 0 -22 C -4 -28, -4 -34, 0 -42 Z"
+            transform="rotate(108)"/>
+      <path d="M 0 -42 C 4 -34, 4 -28, 0 -22 C -4 -28, -4 -34, 0 -42 Z"
+            transform="rotate(180)"/>
+      <path d="M 0 -42 C 4 -34, 4 -28, 0 -22 C -4 -28, -4 -34, 0 -42 Z"
+            transform="rotate(252)"/>
+      <path d="M 0 -42 C 4 -34, 4 -28, 0 -22 C -4 -28, -4 -34, 0 -42 Z"
+            transform="rotate(324)"/>
+    </g>
+
+    <!-- Five rounded petals at 0°, 72°, 144°, 216°, 288°.
+         Each petal is a heart-ish lobe pointing outward, fatter than
+         the sepals so they read as the dominant shape. -->
+    <g>
+      <path d="M 0 -42 C 18 -38, 22 -22, 12 -10 C 6 -4, -6 -4, -12 -10 C -22 -22, -18 -38, 0 -42 Z"/>
+      <path d="M 0 -42 C 18 -38, 22 -22, 12 -10 C 6 -4, -6 -4, -12 -10 C -22 -22, -18 -38, 0 -42 Z"
+            transform="rotate(72)"/>
+      <path d="M 0 -42 C 18 -38, 22 -22, 12 -10 C 6 -4, -6 -4, -12 -10 C -22 -22, -18 -38, 0 -42 Z"
+            transform="rotate(144)"/>
+      <path d="M 0 -42 C 18 -38, 22 -22, 12 -10 C 6 -4, -6 -4, -12 -10 C -22 -22, -18 -38, 0 -42 Z"
+            transform="rotate(216)"/>
+      <path d="M 0 -42 C 18 -38, 22 -22, 12 -10 C 6 -4, -6 -4, -12 -10 C -22 -22, -18 -38, 0 -42 Z"
+            transform="rotate(288)"/>
+    </g>
+
+    <!-- Centre: small white pentagon-ish circle so the eye lands on a
+         flower hub rather than blue mush. -->
+    <circle cx="0" cy="0" r="6" fill="#FFFFFF"/>
+  </g>
+</svg>

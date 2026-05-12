@@ -1,0 +1,15 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+]
+
+[tool.coverage.run]
+source = ["custom_components.yorkshire_water"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
