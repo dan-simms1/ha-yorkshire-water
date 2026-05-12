@@ -1,0 +1,35 @@
+# Byte-compiled / optimised
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# Editors
+.idea/
+.vscode/
+.DS_Store
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Type checkers and linters
+.mypy_cache/
+.ruff_cache/
+
+# HA test cache
+config/
+.storage/
+.HA_VERSION
+
+# Local secrets
+.env
+.env.local
+secrets.toml
+
+# Personal research notes (not for distribution with the integration)
+docs/local-readings.md

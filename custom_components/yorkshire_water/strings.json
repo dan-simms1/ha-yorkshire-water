@@ -1,0 +1,90 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Yorkshire Water",
+                "description": "Provide your Yorkshire Water email and password, plus the URLs of the two companion stealth browser add-ons. The integration uses one of them each refresh; the Yorkshire Water session has a hard 30-minute server cap so a fresh login is the only way to stay autonomous. Choose which engine drives the login via Options after setup.",
+                "data": {
+                    "email": "Yorkshire Water email",
+                    "password": "Yorkshire Water password",
+                    "playwright_url": "Patchright add-on URL",
+                    "nodriver_url": "nodriver add-on URL"
+                },
+                "data_description": {
+                    "playwright_url": "URL of the Patchright Stealth Browser add-on. Default points at the local add-on on port 3001.",
+                    "nodriver_url": "URL of the nodriver Stealth Browser add-on. Default points at the local add-on on port 3002."
+                }
+            },
+            "reauth_confirm": {
+                "title": "Re-authenticate Yorkshire Water",
+                "description": "The stored credentials no longer work. Provide them again to continue.",
+                "data": {
+                    "email": "Yorkshire Water email",
+                    "password": "Yorkshire Water password",
+                    "playwright_url": "Patchright add-on URL",
+                    "nodriver_url": "nodriver add-on URL"
+                }
+            }
+        },
+        "error": {
+            "invalid_auth": "Yorkshire Water rejected those credentials.",
+            "playwright_unreachable": "Could not reach the Playwright server. Make sure the Playwright Stealth Browser add-on is installed, started, and reachable at the URL above.",
+            "unknown": "Something unexpected went wrong. Check the Home Assistant log for details."
+        },
+        "abort": {
+            "already_configured": "This account is already configured.",
+            "reauth_successful": "Re-authentication completed.",
+            "reauth_no_entry": "The original config entry could not be found.",
+            "reauth_account_mismatch": "Reauth must use the same email as the original entry. Remove and re-add the integration if you want to change account."
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Yorkshire Water options",
+                "data": {
+                    "browser_engine": "Browser engine",
+                    "playwright_url": "Patchright add-on URL",
+                    "nodriver_url": "nodriver add-on URL",
+                    "refresh_time": "Refresh time of day",
+                    "refreshes_per_day": "Refreshes per day"
+                },
+                "data_description": {
+                    "browser_engine": "Which stealth browser add-on drives the login each refresh. Patchright (Playwright fork with a patched Chromium) tends to win against Akamai; nodriver (Python; raw CDP) tends to win against Cloudflare. Switch freely; the storage profile is shared.",
+                    "playwright_url": "URL of the Patchright Stealth Browser add-on. Used when Browser engine is set to playwright.",
+                    "nodriver_url": "URL of the nodriver Stealth Browser add-on. Used when Browser engine is set to nodriver.",
+                    "refresh_time": "Local time of the first refresh each day. With more than one refresh per day, the day is divided evenly from this time forward.",
+                    "refreshes_per_day": "How many refreshes per day. Yorkshire Water's upstream cadence is not publicly documented; once per day at a chosen time keeps the integration well below the reCAPTCHA-score threshold and is the recommended default."
+                }
+            }
+        }
+    },
+    "entity": {
+        "sensor": {
+            "window_consumption": { "name": "Recent consumption" },
+            "consumption_today": { "name": "Consumption today" },
+            "consumption_yesterday": { "name": "Consumption yesterday" },
+            "cumulative_consumption": { "name": "Cumulative consumption" },
+            "cumulative_cost": { "name": "Cumulative cost" },
+            "cost_today": { "name": "Cost today" },
+            "cost_yesterday": { "name": "Cost yesterday" },
+            "last_reading_time": { "name": "Last reading time" },
+            "meter_reference": { "name": "Meter reference" },
+            "meter_status": {
+                "name": "Meter status",
+                "state": {
+                    "no_meter": "No meter installed",
+                    "pending_activation": "Awaiting activation by Yorkshire Water",
+                    "live": "Live"
+                }
+            }
+        },
+        "binary_sensor": {
+            "continuous_flow_alarm": { "name": "Continuous flow alarm" },
+            "meter_active": { "name": "Meter active" }
+        },
+        "button": {
+            "refresh_now": { "name": "Refresh now" }
+        }
+    }
+}
