@@ -26,7 +26,7 @@ from pyyorkshirewater import (
     MeterStatus,
     Property,
     UsagePeriod,
-    YearlyConsumptionPoint,
+    YearlyConsumption,
 )
 
 from .const import DOMAIN, LOGGER
@@ -139,10 +139,11 @@ async def load_snapshot(
                         DailyConsumptionPoint.from_api(p)
                         for p in ps.get("daily_points", []) or []
                     ],
-                    yearly_points=[
-                        YearlyConsumptionPoint.from_api(p)
-                        for p in ps.get("yearly_points", []) or []
-                    ],
+                    yearly_consumption=(
+                        YearlyConsumption.from_api(ps["yearly_consumption"])
+                        if isinstance(ps.get("yearly_consumption"), dict)
+                        else None
+                    ),
                 ),
             )
         return YorkshireWaterCoordinatorData(
@@ -179,7 +180,9 @@ async def save_snapshot(
                 ),
                 "usage_periods": [u.raw for u in ps.usage_periods],
                 "daily_points": [p.raw for p in ps.daily_points],
-                "yearly_points": [p.raw for p in ps.yearly_points],
+                "yearly_consumption": (
+                    ps.yearly_consumption.raw if ps.yearly_consumption else None
+                ),
             }
             for ps in data.properties
         ],

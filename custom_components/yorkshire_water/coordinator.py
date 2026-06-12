@@ -43,6 +43,8 @@ from pyyorkshirewater import (
     MeterDetails,
     MeterStatus,
     Property,
+    UsagePeriod,
+    YearlyConsumption,
     YorkshireWaterAPIError,
     YorkshireWaterAuthError,
     YorkshireWaterClient,
@@ -100,9 +102,9 @@ class PropertyData:
     meter_status: MeterStatus = MeterStatus.NO_METER
     meter_details: MeterDetails | None = None
     current_consumption: CurrentConsumption | None = None
-    usage_periods: list[Any] = field(default_factory=list)
+    usage_periods: list[UsagePeriod] = field(default_factory=list)
     daily_points: list[Any] = field(default_factory=list)
-    yearly_points: list[Any] = field(default_factory=list)
+    yearly_consumption: YearlyConsumption | None = None
 
 
 @dataclass(slots=True)
@@ -464,20 +466,36 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
 
         meter_status = _derive_meter_status(details, consumption)
 
-        usage: list[Any] = []
+        usage: list[UsagePeriod] = []
         daily: list[Any] = []
-        yearly: list[Any] = []
+        yearly: YearlyConsumption | None = None
         if meter_status is MeterStatus.LIVE:
+            # Fetch each endpoint independently so a failure in one (most
+            # likely /daily-consumption, which still rejects every param
+            # shape we have tried as "Invalid date range") does not drop
+            # the others.
             try:
                 usage = await client.get_your_usage(meter_reference=meter_ref)
-                daily = await client.get_daily_consumption(meter_reference=meter_ref)
-                yearly = await client.get_yearly_consumption(meter_reference=meter_ref)
             except YorkshireWaterAPIError as err:
-                LOGGER.debug(
-                    "Per-property consumption fetch failed for %s: %s",
-                    prop.display_account_reference,
-                    err,
+                LOGGER.debug("your-usage fetch failed for %s: %s",
+                             prop.display_account_reference, err)
+            try:
+                daily = await client.get_daily_consumption(meter_reference=meter_ref)
+            except YorkshireWaterAPIError as err:
+                LOGGER.debug("daily-consumption fetch failed for %s: %s",
+                             prop.display_account_reference, err)
+            try:
+                # The yearly endpoint needs `year` as a query param.
+                # Use the current-consumption's latest_data_date if we
+                # have one, otherwise fall back to the calendar year of
+                # the meter-details `currentDate`.
+                year = _resolve_consumption_year(details, consumption)
+                yearly = await client.get_yearly_consumption(
+                    year=year, meter_reference=meter_ref,
                 )
+            except YorkshireWaterAPIError as err:
+                LOGGER.debug("yearly-consumption fetch failed for %s: %s",
+                             prop.display_account_reference, err)
 
         return PropertyData(
             property=prop,
@@ -486,7 +504,7 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
             current_consumption=consumption,
             usage_periods=usage,
             daily_points=daily,
-            yearly_points=yearly,
+            yearly_consumption=yearly,
         )
 
 
@@ -500,6 +518,24 @@ def _derive_meter_status(
     if consumption and consumption.is_meter_bau:
         return MeterStatus.LIVE
     return MeterStatus.PENDING_ACTIVATION
+
+
+def _resolve_consumption_year(
+    details: MeterDetails | None,
+    consumption: CurrentConsumption | None,
+) -> int:
+    """Pick the year to ask /yearly-consumption about.
+
+    Prefers the year of the latest reading the meter has actually
+    produced, since asking about a year with no data returns an empty
+    response. Falls back to the meter-details `currentDate`, then to
+    the HA host's current year.
+    """
+    if consumption and consumption.latest_data_date:
+        return consumption.latest_data_date.year
+    if details and details.current_date:
+        return details.current_date.year
+    return datetime.now().year
 
 
 def _parse_refresh_time(value: str | object) -> time:

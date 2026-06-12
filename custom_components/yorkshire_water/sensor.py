@@ -86,7 +86,15 @@ def _yesterday_consumption(data: PropertyData) -> float | None:
 
 
 def _last_reading_time(data: PropertyData) -> datetime | None:
-    """Return the date of the most recent daily point."""
+    """Return when the meter was last read.
+
+    Prefers `current_consumption.latest_data_date` (always populated for
+    a live meter, single API call), falls back to the most recent
+    daily-series point for installs where daily data is available.
+    """
+    if data.current_consumption and data.current_consumption.latest_data_date:
+        d = data.current_consumption.latest_data_date
+        return datetime(d.year, d.month, d.day, tzinfo=UTC)
     points = _sorted_dated_points(data)
     if not points:
         return None
@@ -94,11 +102,27 @@ def _last_reading_time(data: PropertyData) -> datetime | None:
     return datetime(point_date.year, point_date.month, point_date.day, tzinfo=UTC)
 
 
+def _last_update_time(data: PropertyData) -> datetime | None:
+    """Return when YW's aggregation pipeline last refreshed the summary."""
+    if not data.current_consumption or not data.current_consumption.latest_update_date:
+        return None
+    d = data.current_consumption.latest_update_date
+    return datetime(d.year, d.month, d.day, tzinfo=UTC)
+
+
 def _meter_reference(data: PropertyData) -> str | None:
     """Return the meter reference, if any."""
     if data.meter_details is None:
         return None
     return data.meter_details.meter_reference
+
+
+def _meter_install_date(data: PropertyData) -> datetime | None:
+    """Return when the meter was installed."""
+    if data.meter_details is None or data.meter_details.start_date is None:
+        return None
+    d = data.meter_details.start_date
+    return datetime(d.year, d.month, d.day, tzinfo=UTC)
 
 
 def _today_cost(data: PropertyData) -> float | None:
@@ -123,6 +147,95 @@ def _live_only(data: PropertyData) -> bool:
 
 def _has_meter(data: PropertyData) -> bool:
     return bool(_meter_reference(data))
+
+
+def _has_usage(data: PropertyData) -> bool:
+    """Available when we have at least the current month's usage summary."""
+    return data.meter_status is MeterStatus.LIVE and bool(data.usage_periods)
+
+
+def _has_prev_usage(data: PropertyData) -> bool:
+    """Available when we have at least two months' data (this and last)."""
+    return data.meter_status is MeterStatus.LIVE and len(data.usage_periods) >= 2
+
+
+def _has_yearly(data: PropertyData) -> bool:
+    return data.meter_status is MeterStatus.LIVE and data.yearly_consumption is not None
+
+
+def _has_alarm(data: PropertyData) -> bool:
+    cc = data.current_consumption
+    return bool(cc and cc.continuous_flow_alarm_state)
+
+
+# Monthly summary value functions: usage_periods is ordered most-recent
+# first by the API, so [0] is the current month and [1] is the previous.
+
+def _this_month_consumption(data: PropertyData) -> float | None:
+    return data.usage_periods[0].total_consumption_litres if data.usage_periods else None
+
+
+def _this_month_clean_cost(data: PropertyData) -> float | None:
+    return data.usage_periods[0].clean_water_cost if data.usage_periods else None
+
+
+def _this_month_sewerage_cost(data: PropertyData) -> float | None:
+    return data.usage_periods[0].sewerage_cost if data.usage_periods else None
+
+
+def _this_month_total_cost(data: PropertyData) -> float | None:
+    return (
+        data.usage_periods[0].total_cost_including_sewerage
+        if data.usage_periods else None
+    )
+
+
+def _last_month_consumption(data: PropertyData) -> float | None:
+    return (
+        data.usage_periods[1].total_consumption_litres
+        if len(data.usage_periods) >= 2 else None
+    )
+
+
+def _last_month_total_cost(data: PropertyData) -> float | None:
+    return (
+        data.usage_periods[1].total_cost_including_sewerage
+        if len(data.usage_periods) >= 2 else None
+    )
+
+
+# Year-to-date value functions
+
+def _ytd_consumption(data: PropertyData) -> float | None:
+    return data.yearly_consumption.total_consumption_litres if data.yearly_consumption else None
+
+
+def _ytd_total_cost(data: PropertyData) -> float | None:
+    return data.yearly_consumption.total_cost if data.yearly_consumption else None
+
+
+def _monthly_avg_consumption(data: PropertyData) -> float | None:
+    return data.yearly_consumption.monthly_litres_average if data.yearly_consumption else None
+
+
+def _monthly_avg_cost(data: PropertyData) -> float | None:
+    return data.yearly_consumption.monthly_cost_average if data.yearly_consumption else None
+
+
+# Continuous-flow alarm detail value functions
+
+def _continuous_flow_rate(data: PropertyData) -> float | None:
+    cc = data.current_consumption
+    if not cc or not cc.continuous_flow_alarm_details:
+        return None
+    return cc.continuous_flow_alarm_details[0].continuous_flow_l_per_h
+
+
+def _continuous_flow_cost(data: PropertyData) -> float | None:
+    cc = data.current_consumption
+    if not cc or not cc.continuous_flow_alarm_details:
+        return None
+    return cc.continuous_flow_alarm_details[0].cost_per_day
 
 
 SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
@@ -191,12 +304,150 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     YorkshireWaterSensorEntityDescription(
+        key="last_update_time",
+        name="Last update time",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=_last_update_time,
+        available_fn=_live_only,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    YorkshireWaterSensorEntityDescription(
         key="meter_reference",
         translation_key="meter_reference",
         name="Meter reference",
         value_fn=_meter_reference,
         available_fn=_has_meter,
         entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    YorkshireWaterSensorEntityDescription(
+        key="meter_install_date",
+        name="Meter install date",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        value_fn=_meter_install_date,
+        available_fn=_has_meter,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    # Monthly summary sensors — populated from /your-usage
+    YorkshireWaterSensorEntityDescription(
+        key="consumption_this_month",
+        name="Consumption this month",
+        device_class=SensorDeviceClass.WATER,
+        state_class=SensorStateClass.TOTAL,
+        native_unit_of_measurement=UnitOfVolume.LITERS,
+        suggested_display_precision=0,
+        value_fn=_this_month_consumption,
+        available_fn=_has_usage,
+    ),
+    YorkshireWaterSensorEntityDescription(
+        key="cost_this_month_clean_water",
+        name="Clean water cost this month",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        native_unit_of_measurement="GBP",
+        suggested_display_precision=2,
+        value_fn=_this_month_clean_cost,
+        available_fn=_has_usage,
+    ),
+    YorkshireWaterSensorEntityDescription(
+        key="cost_this_month_sewerage",
+        name="Sewerage cost this month",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        native_unit_of_measurement="GBP",
+        suggested_display_precision=2,
+        value_fn=_this_month_sewerage_cost,
+        available_fn=_has_usage,
+    ),
+    YorkshireWaterSensorEntityDescription(
+        key="cost_this_month_total",
+        name="Total cost this month",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        native_unit_of_measurement="GBP",
+        suggested_display_precision=2,
+        value_fn=_this_month_total_cost,
+        available_fn=_has_usage,
+    ),
+    YorkshireWaterSensorEntityDescription(
+        key="consumption_last_month",
+        name="Consumption last month",
+        device_class=SensorDeviceClass.WATER,
+        state_class=SensorStateClass.TOTAL,
+        native_unit_of_measurement=UnitOfVolume.LITERS,
+        suggested_display_precision=0,
+        value_fn=_last_month_consumption,
+        available_fn=_has_prev_usage,
+    ),
+    YorkshireWaterSensorEntityDescription(
+        key="cost_last_month_total",
+        name="Total cost last month",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL,
+        native_unit_of_measurement="GBP",
+        suggested_display_precision=2,
+        value_fn=_last_month_total_cost,
+        available_fn=_has_prev_usage,
+    ),
+    # Year-to-date sensors — populated from /yearly-consumption
+    YorkshireWaterSensorEntityDescription(
+        key="consumption_year_to_date",
+        name="Consumption year to date",
+        device_class=SensorDeviceClass.WATER,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement=UnitOfVolume.LITERS,
+        suggested_display_precision=0,
+        value_fn=_ytd_consumption,
+        available_fn=_has_yearly,
+    ),
+    YorkshireWaterSensorEntityDescription(
+        key="cost_year_to_date",
+        name="Cost year to date",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement="GBP",
+        suggested_display_precision=2,
+        value_fn=_ytd_total_cost,
+        available_fn=_has_yearly,
+    ),
+    YorkshireWaterSensorEntityDescription(
+        key="average_monthly_consumption",
+        name="Average monthly consumption",
+        device_class=SensorDeviceClass.WATER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfVolume.LITERS,
+        suggested_display_precision=0,
+        value_fn=_monthly_avg_consumption,
+        available_fn=_has_yearly,
+    ),
+    YorkshireWaterSensorEntityDescription(
+        key="average_monthly_cost",
+        name="Average monthly cost",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="GBP",
+        suggested_display_precision=2,
+        value_fn=_monthly_avg_cost,
+        available_fn=_has_yearly,
+    ),
+    # Continuous-flow alarm detail sensors (only meaningful when alarm is on)
+    YorkshireWaterSensorEntityDescription(
+        key="continuous_flow_rate",
+        name="Continuous flow rate",
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="L/h",
+        suggested_display_precision=1,
+        value_fn=_continuous_flow_rate,
+        available_fn=_has_alarm,
+    ),
+    YorkshireWaterSensorEntityDescription(
+        key="continuous_flow_cost_per_day",
+        name="Continuous flow cost per day",
+        device_class=SensorDeviceClass.MONETARY,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement="GBP",
+        suggested_display_precision=2,
+        value_fn=_continuous_flow_cost,
+        available_fn=_has_alarm,
     ),
 )
 
