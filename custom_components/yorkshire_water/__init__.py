@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 
 from .cache import (
     load_auth_cookies,
@@ -173,6 +174,10 @@ async def async_setup_entry(
                 entry.title,
             )
 
+    # Drop any orphaned entities from prior versions before HA
+    # registers the current set on this setup pass.
+    _drop_deprecated_entities(hass, coordinator)
+
     # Subscribe to the user's chosen daily refresh schedule. This
     # happens whether the bootstrap succeeded or not - if it failed,
     # the next scheduled clock time is the recovery path.
@@ -191,6 +196,50 @@ async def async_setup_entry(
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     return True
+
+
+# Keys of sensors that previous integration versions registered but
+# the current version no longer defines. The shells linger in HA's
+# entity registry as `unavailable` until we explicitly remove them.
+# Unique ids in this integration are `{display_account_reference}_{key}`.
+_DEPRECATED_SENSOR_KEYS: tuple[str, ...] = (
+    # Originally added in v1.4.0 as a diagnostic. Renamed to
+    # account_start_date in v1.5.0 when we realised the underlying
+    # API field was the customer's account-open date and not the
+    # smart meter's install date.
+    "meter_install_date",
+    # Replacement added in v1.5.0, then removed entirely in v1.5.3.
+    # YW do not expose the actual meter install date anywhere; the
+    # account-open date wasn't useful enough to keep on its own.
+    "account_start_date",
+)
+
+
+def _drop_deprecated_entities(
+    hass: HomeAssistant,
+    coordinator: YorkshireWaterCoordinator,
+) -> None:
+    """Remove orphaned entities left over from earlier versions."""
+    snapshot = coordinator.data
+    if snapshot is None:
+        return
+    ent_reg = er.async_get(hass)
+    for prop_data in snapshot.properties:
+        display_ref = prop_data.property.display_account_reference
+        if not display_ref:
+            continue
+        for key in _DEPRECATED_SENSOR_KEYS:
+            unique_id = f"{display_ref}_{key}"
+            entity_id = ent_reg.async_get_entity_id(
+                "sensor", DOMAIN, unique_id,
+            )
+            if entity_id:
+                LOGGER.info(
+                    "Removing deprecated YW entity %s (unique_id=%s)",
+                    entity_id,
+                    unique_id,
+                )
+                ent_reg.async_remove(entity_id)
 
 
 def _format_account_number(raw: str) -> str:
