@@ -12,7 +12,7 @@ from pyyorkshirewater import (
     DailyConsumptionPoint,
     MeterDetails,
     Property,
-    YearlyConsumptionPoint,
+    YearlyConsumption,
 )
 
 SAMPLE_COOKIES: dict[str, str] = {
@@ -154,10 +154,12 @@ def _daily_points() -> list[DailyConsumptionPoint]:
     ]
 
 
-def _yearly_points() -> list[YearlyConsumptionPoint]:
-    return [
-        YearlyConsumptionPoint.from_api({"year": 2025, "totalLitres": 110000}),
-    ]
+def _yearly_consumption() -> YearlyConsumption:
+    return YearlyConsumption.from_api({
+        "year": 2025,
+        "totalConsumption": 110000,
+        "totalCost": 500.0,
+    })
 
 
 def make_mock_client(
@@ -182,7 +184,7 @@ def make_mock_client(
     )
     client.get_your_usage = AsyncMock(return_value=[])
     client.get_daily_consumption = AsyncMock(return_value=_daily_points())
-    client.get_yearly_consumption = AsyncMock(return_value=_yearly_points())
+    client.get_yearly_consumption = AsyncMock(return_value=_yearly_consumption())
     client.close = AsyncMock(return_value=None)
     client.cookies = dict(SAMPLE_COOKIES)
     client.__aenter__ = AsyncMock(return_value=client)
