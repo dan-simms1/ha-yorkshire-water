@@ -1,10 +1,22 @@
 """Data update coordinator for Yorkshire Water.
 
-Each refresh runs a fresh Playwright-driven login, harvests the
-resulting session cookies, mints an access token via pyyorkshirewater,
-fetches all the data we surface, then drops the session. We do not
-hold a YW session open between refreshes because YW's hard 30-minute
-server-side cap would invalidate it anyway.
+Each refresh tries to mint a fresh access token from the stored IdP
+cookie jar first, using `pyyorkshirewater`'s built-in silent renewal
+(`/connect/authorize?prompt=none`). Only when those cookies have
+hit their absolute session ceiling and `CookieSessionExpiredError`
+is raised do we fall back to the stealth-browser bridge for a fresh
+real-browser login.
+
+This shape exists because YW gates the login form behind reCAPTCHA
+v3 — every browser-bridge call costs reCAPTCHA score budget. Doing
+the cheap silent renewal first, and only paying for a real-browser
+login when the IdP actually demands one, keeps the score budget
+intact and makes per-restart polling near-free.
+
+The rotated `idsrv` / `.AspNetCore.Identity.Application` cookies
+that the IdP hands back on each silent renewal are persisted via
+`save_auth_cookies` so the next poll (or HA restart) starts with
+fresh state.
 
 For multi-property accounts the smart-meter data is fetched per
 property using the `account_reference` scoping kwarg in
@@ -41,7 +53,11 @@ from .bridge_auth import (
     BridgeUnreachableError,
     bridge_login,
 )
-from .cache import save_snapshot
+from .cache import (
+    remove_auth_cookies,
+    save_auth_cookies,
+    save_snapshot,
+)
 from .const import (
     BROWSER_ENGINE_NODRIVER,
     CONF_BROWSER_ENGINE,
@@ -134,6 +150,16 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         self._email: str = entry.data[CONF_EMAIL]
         self._password: str = entry.data[CONF_PASSWORD]
         self._unsub_callbacks: list[Callable[[], None]] = []
+        # IdP cookie jar carried across polls. Populated by
+        # `__init__.async_setup_entry` from disk before the first
+        # refresh; refreshed in-place from `client.cookies` after
+        # every successful silent renewal (the library absorbs IdP
+        # Set-Cookie rotations during `/connect/authorize`).
+        self._cookies: dict[str, str] | None = None
+        # Refresh-Now button, scheduled poll, and bootstrap refresh
+        # can overlap. Serialise the auth + persist step so the
+        # rotated cookie jar is not raced.
+        self._auth_lock = asyncio.Lock()
 
     @property
     def _bridge_url(self) -> str:
@@ -220,42 +246,118 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         self.cancel_scheduled_refreshes()
         await super().async_shutdown()
 
+    def set_initial_cookies(self, cookies: dict[str, str] | None) -> None:
+        """Seed the cookie jar from persistent storage at setup.
+
+        Called once by `__init__.async_setup_entry` after the entry's
+        last known cookies are restored from the auth cache. After
+        the first successful refresh the jar is maintained in-place
+        from `YorkshireWaterClient.cookies`.
+        """
+        self._cookies = cookies
+
     async def _async_update_data(self) -> YorkshireWaterCoordinatorData:
-        """Fresh login, fetch customer + every property, drop the session."""
+        """Refresh data, preferring silent renewal over a browser login.
+
+        Flow:
+        1. If we have a stored cookie jar, try silent renewal via the
+           library and fetch the snapshot. On `CookieSessionExpiredError`
+           (the IdP said `error=login_required`) drop the jar and fall
+           through to step 2. Any other error propagates as
+           `UpdateFailed` — we do NOT invalidate cookies on transients.
+        2. Call the browser bridge for a fresh real-browser login,
+           reseed the jar from the returned cookies, fetch again.
+
+        The auth lock around the whole thing prevents the Refresh
+        Now button, scheduled polls, and bootstrap refresh from
+        racing the rotated-cookie persist step.
+        """
         # Use Home Assistant's shared httpx client. Creating one inline
         # via `httpx.AsyncClient(...)` would load SSL CAs synchronously
         # in the event loop on first use, which trips the blocking-call
         # detector. The shared client is initialised on HA startup
         # outside the loop.
         http_client = get_async_client(self.hass)
-        try:
-            cookies = await bridge_login(
-                self._bridge_url,
-                self._email,
-                self._password,
-                http_client=http_client,
-            )
-        except BridgeUnreachableError as err:
-            # The Playwright add-on is not running / not reachable.
-            # ConfigEntryNotReady so HA retries setup on its own
-            # backoff schedule once the add-on comes back.
-            raise ConfigEntryNotReady(str(err)) from err
-        except BridgeLoginError as err:
-            # Treat as a transient failure rather than triggering
-            # reauth. Most causes of "login failed" here are
-            # transient: reCAPTCHA score cooldown after repeated
-            # attempts, YW serving a v2 image challenge, momentary
-            # form-render glitches, network blips. The user's
-            # credentials are almost certainly still correct, and
-            # surfacing reauth on every transient failure is wrong:
-            # it interrupts the user with a misleading prompt while
-            # the real fix is "wait an hour".
-            #
-            # The coordinator will retry on its normal interval. The
-            # user can still trigger reauth manually from the UI if
-            # they have actually changed their YW password.
-            raise UpdateFailed(f"YW login failed (will retry): {err}") from err
 
+        async with self._auth_lock:
+            if self._cookies:
+                try:
+                    return await self._fetch_all(
+                        http_client,
+                        self._cookies,
+                        source="stored cookies (silent renewal)",
+                    )
+                except CookieSessionExpiredError as err:
+                    LOGGER.info(
+                        "Stored YW IdP cookies expired (%s); "
+                        "falling back to browser bridge",
+                        err,
+                    )
+                    self._cookies = None
+                    try:
+                        await remove_auth_cookies(
+                            self.hass, self.entry.entry_id,
+                        )
+                    except Exception:
+                        LOGGER.exception(
+                            "Failed to drop expired YW auth cookies from cache",
+                        )
+
+            try:
+                bridge_cookies = await bridge_login(
+                    self._bridge_url,
+                    self._email,
+                    self._password,
+                    http_client=http_client,
+                )
+            except BridgeUnreachableError as err:
+                # The stealth-browser add-on is not running / not
+                # reachable. ConfigEntryNotReady so HA retries setup
+                # on its own backoff schedule once the add-on comes
+                # back.
+                raise ConfigEntryNotReady(str(err)) from err
+            except BridgeLoginError as err:
+                # Treat as a transient failure rather than triggering
+                # reauth. Most causes of "login failed" here are
+                # transient: reCAPTCHA score cooldown after repeated
+                # attempts, YW serving a v2 image challenge, momentary
+                # form-render glitches, network blips. The user's
+                # credentials are almost certainly still correct, and
+                # surfacing reauth on every transient failure is wrong.
+                raise UpdateFailed(
+                    f"YW login failed (will retry): {err}",
+                ) from err
+
+            try:
+                return await self._fetch_all(
+                    http_client,
+                    bridge_cookies,
+                    source="fresh browser-bridge login",
+                )
+            except CookieSessionExpiredError as err:
+                # Cookies we just harvested were rejected by the API
+                # before we could even use them. YW backend race or
+                # transient, not a credentials issue.
+                raise UpdateFailed(
+                    f"Cookies expired immediately: {err}",
+                ) from err
+
+    async def _fetch_all(
+        self,
+        http_client: Any,
+        cookies: dict[str, str],
+        *,
+        source: str,
+    ) -> YorkshireWaterCoordinatorData:
+        """Run one refresh against a known cookie jar.
+
+        Performs the silent-renewal handshake, fetches the customer
+        plus every property's smart-meter data, persists the rotated
+        cookie jar AND the snapshot on success, and returns the
+        snapshot. Raises `CookieSessionExpiredError` if the jar is
+        dead so the caller can decide whether to drop down to the
+        browser bridge.
+        """
         client = YorkshireWaterClient(
             cookies=cookies,
             http_client=http_client,
@@ -272,9 +374,9 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
 
                 # Canary: if two different properties report the
                 # same meter reference, the YW API is ignoring the
-                # account_reference scope and we cannot
-                # distinguish per-property data. Log loudly so a
-                # multi-property tester can flag it.
+                # account_reference scope and we cannot distinguish
+                # per-property data. Log loudly so a multi-property
+                # tester can flag it.
                 meter_ref = (
                     snapshot.meter_details.meter_reference
                     if snapshot.meter_details
@@ -291,33 +393,45 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
                         )
                     else:
                         seen_meter_refs.add(meter_ref)
-        except CookieSessionExpiredError as err:
-            # Cookies we just harvested were rejected by the API. YW
-            # backend race or transient bug, not a credentials issue.
-            raise UpdateFailed(f"Cookies expired immediately: {err}") from err
+        except CookieSessionExpiredError:
+            raise
         except YorkshireWaterAuthError as err:
-            # Same logic as BridgeLoginError above: do not trigger
-            # reauth on transient API auth failures. The cookies just
-            # came from a successful login flow; if the API rejects
-            # them now it is almost certainly a YW-side transient.
-            raise UpdateFailed(f"YW API rejected fresh cookies (will retry): {err}") from err
+            # Non-CookieSessionExpired auth failure: do not invalidate
+            # the cookie jar (it just produced a valid bearer; the API
+            # failure is almost certainly a YW transient).
+            raise UpdateFailed(
+                f"YW API rejected fresh cookies (will retry): {err}",
+            ) from err
         except YorkshireWaterAPIError as err:
             raise UpdateFailed(str(err)) from err
         # We do NOT close the shared http_client; HA owns it.
+
+        # Persist the rotated cookie jar. After silent renewal the
+        # IdP rotates `idsrv.session` and `.AspNetCore.Identity.Application`
+        # in-place; not capturing the new values would force a
+        # bridge fallback on the very next poll.
+        self._cookies = client.cookies
+        try:
+            await save_auth_cookies(
+                self.hass, self.entry.entry_id, client.cookies,
+            )
+        except Exception:
+            LOGGER.exception("Failed to persist YW auth cookies")
 
         snapshot = YorkshireWaterCoordinatorData(
             customer=customer,
             properties=property_snapshots,
         )
 
-        # Persist the snapshot so the next HA restart can restore state
-        # without performing another YW login. Quietly swallow storage
-        # errors; failure to cache is not failure to refresh.
+        # Persist the snapshot so the next HA restart can restore
+        # state without performing another YW login. Quietly swallow
+        # storage errors; failure to cache is not failure to refresh.
         try:
             await save_snapshot(self.hass, self.entry.entry_id, snapshot)
         except Exception:
             LOGGER.exception("Failed to persist YW snapshot to cache")
 
+        LOGGER.debug("YW refresh succeeded via %s", source)
         return snapshot
 
     async def _fetch_property_data(
