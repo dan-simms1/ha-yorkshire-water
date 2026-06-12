@@ -29,7 +29,7 @@ import asyncio
 import random
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -480,7 +480,22 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
                 LOGGER.debug("your-usage fetch failed for %s: %s",
                              prop.display_account_reference, err)
             try:
-                daily = await client.get_daily_consumption(meter_reference=meter_ref)
+                # YW requires a moveInDate (the customer's account
+                # start date at the property, surfaced by the API as
+                # meter-details.startDate) and moveOutDate (today for
+                # active customers). pyyorkshirewater fills both in
+                # from the client's cached meter-details and today's
+                # date when we omit them; we just need a sensible
+                # window. 8 days back gives today, yesterday, and a
+                # week-back rolling average without burdening the
+                # API.
+                end = datetime.now().date()
+                start = end - timedelta(days=8)
+                daily = await client.get_daily_consumption(
+                    start_date=start.isoformat(),
+                    end_date=end.isoformat(),
+                    meter_reference=meter_ref,
+                )
             except YorkshireWaterAPIError as err:
                 LOGGER.debug("daily-consumption fetch failed for %s: %s",
                              prop.display_account_reference, err)

@@ -117,8 +117,15 @@ def _meter_reference(data: PropertyData) -> str | None:
     return data.meter_details.meter_reference
 
 
-def _meter_install_date(data: PropertyData) -> datetime | None:
-    """Return when the meter was installed."""
+def _account_start_date(data: PropertyData) -> datetime | None:
+    """Return when the customer's account at this property started.
+
+    YW expose this field as `meter-details.startDate` but it is the
+    customer's account-open / move-in date at the property, NOT when
+    the physical smart meter was installed. Smart meter rollout only
+    started in 2025 across the region, so any value from before then
+    cannot be a meter install.
+    """
     if data.meter_details is None or data.meter_details.start_date is None:
         return None
     d = data.meter_details.start_date
@@ -320,10 +327,10 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     YorkshireWaterSensorEntityDescription(
-        key="meter_install_date",
-        name="Meter install date",
+        key="account_start_date",
+        name="Account start date",
         device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=_meter_install_date,
+        value_fn=_account_start_date,
         available_fn=_has_meter,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
