@@ -10,7 +10,7 @@
     "issue_tracker": "https://github.com/dan-simms1/ha-yorkshire-water/issues",
     "loggers": ["pyyorkshirewater", "custom_components.yorkshire_water"],
     "requirements": [
-        "pyyorkshirewater==1.0.0"
+        "pyyorkshirewater==1.1.0"
     ],
-    "version": "1.0.0"
+    "version": "1.1.0"
 }
