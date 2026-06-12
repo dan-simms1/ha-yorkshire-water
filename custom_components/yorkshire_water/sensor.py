@@ -117,21 +117,6 @@ def _meter_reference(data: PropertyData) -> str | None:
     return data.meter_details.meter_reference
 
 
-def _account_start_date(data: PropertyData) -> datetime | None:
-    """Return when the customer's account at this property started.
-
-    YW expose this field as `meter-details.startDate` but it is the
-    customer's account-open / move-in date at the property, NOT when
-    the physical smart meter was installed. Smart meter rollout only
-    started in 2025 across the region, so any value from before then
-    cannot be a meter install.
-    """
-    if data.meter_details is None or data.meter_details.start_date is None:
-        return None
-    d = data.meter_details.start_date
-    return datetime(d.year, d.month, d.day, tzinfo=UTC)
-
-
 def _today_cost(data: PropertyData) -> float | None:
     """Return today's full water bill (clean water plus sewerage)."""
     points = _sorted_dated_points(data)
@@ -168,11 +153,6 @@ def _has_prev_usage(data: PropertyData) -> bool:
 
 def _has_yearly(data: PropertyData) -> bool:
     return data.meter_status is MeterStatus.LIVE and data.yearly_consumption is not None
-
-
-def _has_alarm(data: PropertyData) -> bool:
-    cc = data.current_consumption
-    return bool(cc and cc.continuous_flow_alarm_state)
 
 
 # Monthly summary value functions: usage_periods is ordered most-recent
@@ -326,14 +306,6 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         available_fn=_has_meter,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
-    YorkshireWaterSensorEntityDescription(
-        key="account_start_date",
-        name="Account start date",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=_account_start_date,
-        available_fn=_has_meter,
-        entity_category=EntityCategory.DIAGNOSTIC,
-    ),
     # Monthly summary sensors — populated from /your-usage
     YorkshireWaterSensorEntityDescription(
         key="consumption_this_month",
@@ -442,7 +414,11 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         value_fn=_monthly_avg_cost,
         available_fn=_has_yearly,
     ),
-    # Continuous-flow alarm detail sensors (only meaningful when alarm is on)
+    # Continuous-flow alarm detail sensors. The API always returns one
+    # entry in `currentContinuousFlowAlarmDetails` with zeros when
+    # there's no leak. Showing the zero baseline continuously means any
+    # non-zero blip on the graph is an early-warning signal even
+    # before YW's pipeline officially flips the alarm.
     YorkshireWaterSensorEntityDescription(
         key="continuous_flow_rate",
         name="Continuous flow rate",
@@ -450,17 +426,19 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         native_unit_of_measurement="L/h",
         suggested_display_precision=1,
         value_fn=_continuous_flow_rate,
-        available_fn=_has_alarm,
+        available_fn=_live_only,
     ),
     YorkshireWaterSensorEntityDescription(
         key="continuous_flow_cost_per_day",
         name="Continuous flow cost per day",
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
+        # MONETARY does not permit state_class=measurement; leave it
+        # unset so HA renders the value without trying to bucket it
+        # into long-term stats.
         native_unit_of_measurement="GBP",
         suggested_display_precision=2,
         value_fn=_continuous_flow_cost,
-        available_fn=_has_alarm,
+        available_fn=_live_only,
     ),
 )
 
