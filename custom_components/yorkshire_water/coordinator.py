@@ -440,9 +440,20 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         prop: Property,
     ) -> PropertyData:
         """Fetch the smart-meter data for a single property."""
-        ref = prop.account_reference or None
+        # YW has two different shapes of "account reference" depending
+        # on the endpoint:
+        #   - /account/properties/detail takes the long opaque
+        #     `account_reference` token.
+        #   - /account/smartmeter/* takes the 15-digit form, which is
+        #     `displayAccountReference` minus the trailing check digit.
+        # The Property model surfaces both; we pass the 15-digit form
+        # here because the smart-meter endpoints reject the opaque
+        # token shape with HTTP 404, which the library translates into
+        # an empty MeterDetails and ultimately a `no_meter` status.
+        display_ref = prop.display_account_reference or ""
+        smart_meter_ref = display_ref[:-1] if len(display_ref) >= 15 else None
 
-        details = await client.get_meter_details(account_reference=ref)
+        details = await client.get_meter_details(account_reference=smart_meter_ref)
         # Smart-meter consumption endpoints take meterReference (the
         # 10-digit ref returned in meter-details), not the long opaque
         # account_reference. Pass it through explicitly so multi-property
