@@ -48,6 +48,7 @@ from pyyorkshirewater import (
     YorkshireWaterAPIError,
     YorkshireWaterAuthError,
     YorkshireWaterClient,
+    YorkshireWaterMeterNotReadyError,
 )
 
 from .bridge_auth import (
@@ -474,29 +475,35 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
             # likely /daily-consumption, which still rejects every param
             # shape we have tried as "Invalid date range") does not drop
             # the others.
+            # Catch YorkshireWaterMeterNotReadyError alongside the API
+            # error - get_daily_consumption raises it when the library
+            # can't derive move_in_date, and we don't want one
+            # endpoint's pre-flight failure to kill the others.
             try:
                 usage = await client.get_your_usage(meter_reference=meter_ref)
-            except YorkshireWaterAPIError as err:
+            except (YorkshireWaterAPIError, YorkshireWaterMeterNotReadyError) as err:
                 LOGGER.debug("your-usage fetch failed for %s: %s",
                              prop.display_account_reference, err)
             try:
-                # YW requires a moveInDate (the customer's account
-                # start date at the property, surfaced by the API as
-                # meter-details.startDate) and moveOutDate (today for
-                # active customers). pyyorkshirewater fills both in
-                # from the client's cached meter-details and today's
-                # date when we omit them; we just need a sensible
-                # window. 8 days back gives today, yesterday, and a
-                # week-back rolling average without burdening the
-                # API.
-                end = datetime.now().date()
-                start = end - timedelta(days=8)
-                daily = await client.get_daily_consumption(
-                    start_date=start.isoformat(),
-                    end_date=end.isoformat(),
-                    meter_reference=meter_ref,
-                )
-            except YorkshireWaterAPIError as err:
+                # YW requires moveInDate (the customer's account start
+                # date at the property) and moveOutDate. We have both:
+                # the per-property meter-details we just fetched has
+                # the start_date; today is today. Passing them
+                # explicitly avoids depending on the client's cached
+                # meter-details which is only populated when
+                # get_meter_details() is called without an
+                # account_reference scope.
+                if details.start_date is not None:
+                    end = datetime.now().date()
+                    start = end - timedelta(days=8)
+                    daily = await client.get_daily_consumption(
+                        start_date=start.isoformat(),
+                        end_date=end.isoformat(),
+                        move_in_date=details.start_date.isoformat(),
+                        move_out_date=end.isoformat(),
+                        meter_reference=meter_ref,
+                    )
+            except (YorkshireWaterAPIError, YorkshireWaterMeterNotReadyError) as err:
                 LOGGER.debug("daily-consumption fetch failed for %s: %s",
                              prop.display_account_reference, err)
             try:
@@ -508,7 +515,7 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
                 yearly = await client.get_yearly_consumption(
                     year=year, meter_reference=meter_ref,
                 )
-            except YorkshireWaterAPIError as err:
+            except (YorkshireWaterAPIError, YorkshireWaterMeterNotReadyError) as err:
                 LOGGER.debug("yearly-consumption fetch failed for %s: %s",
                              prop.display_account_reference, err)
 
