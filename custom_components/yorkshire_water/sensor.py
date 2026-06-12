@@ -410,7 +410,11 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         key="cost_year_to_date",
         name="Cost year to date",
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
+        # MONETARY only permits state_class=total or no state_class. The
+        # YTD cost is monotonic-ish (resets each calendar year) so TOTAL
+        # is the right choice — total_increasing would imply
+        # never-resets.
+        state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement="GBP",
         suggested_display_precision=2,
         value_fn=_ytd_total_cost,
@@ -420,7 +424,9 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         key="average_monthly_consumption",
         name="Average monthly consumption",
         device_class=SensorDeviceClass.WATER,
-        state_class=SensorStateClass.MEASUREMENT,
+        # An average is neither a measurement nor an accumulator. No
+        # state_class - HA's long-term stats system handles it as a
+        # plain value.
         native_unit_of_measurement=UnitOfVolume.LITERS,
         suggested_display_precision=0,
         value_fn=_monthly_avg_consumption,
@@ -430,7 +436,7 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         key="average_monthly_cost",
         name="Average monthly cost",
         device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.MEASUREMENT,
+        # Average; no state_class. See above.
         native_unit_of_measurement="GBP",
         suggested_display_precision=2,
         value_fn=_monthly_avg_cost,
