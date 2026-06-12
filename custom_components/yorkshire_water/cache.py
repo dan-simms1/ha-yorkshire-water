@@ -91,8 +91,11 @@ async def save_auth_cookies(
 
 
 async def remove_auth_cookies(hass: HomeAssistant, entry_id: str) -> None:
-    """Drop any persisted auth cookies. Called when an entry is removed
-    or when the IdP rejects the stored session as expired."""
+    """Drop any persisted auth cookies.
+
+    Called when an entry is removed or when the IdP rejects the stored
+    session as expired.
+    """
     await _auth_store(hass, entry_id).async_remove()
 
 
