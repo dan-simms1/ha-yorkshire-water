@@ -28,13 +28,15 @@ Services Limited.
 
 Yorkshire Water's portal is fronted by Akamai with bot management enabled
 and protects the login form with invisible reCAPTCHA v3. Their OAuth client
-disallows refresh tokens and the password grant; the session has a hard
-30-minute server-side cap.
+disallows refresh tokens and the password grant; the IdP session has an
+absolute lifetime ceiling that no amount of silent renewal will extend.
 
-The integration's answer is to drive a real Chromium browser through the
-login form on every refresh, capture the cookies, fetch the meter data,
-then drop the session. To do that you need one of the companion
-stealth-browser add-ons:
+The integration's answer is two-stage. Each refresh first tries to mint a
+fresh bearer token from the stored IdP cookie jar via OIDC silent renewal —
+no browser, no reCAPTCHA cost. Only when those cookies hit the session
+ceiling does the integration drive a real Chromium browser through the
+login form to harvest a fresh jar. To do that fallback you need one of
+the companion stealth-browser add-ons:
 
 - [**Patchright Stealth Browser**](https://github.com/dan-simms1/playwright-stealth-addon) (Patchright fork with a patched Chromium binary).
 - [**nodriver Stealth Browser**](https://github.com/dan-simms1/nodriver-stealth-addon) (Python; raw CDP, no WebDriver layer).

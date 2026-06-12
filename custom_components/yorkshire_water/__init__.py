@@ -8,7 +8,12 @@ from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 
-from .cache import load_snapshot, remove_snapshot
+from .cache import (
+    load_auth_cookies,
+    load_snapshot,
+    remove_auth_cookies,
+    remove_snapshot,
+)
 from .const import (
     BROWSER_ENGINE_PLAYWRIGHT,
     CONF_BROWSER_ENGINE,
@@ -135,6 +140,12 @@ async def async_setup_entry(
     coordinator = YorkshireWaterCoordinator(hass=hass, entry=entry)
     entry.runtime_data = YorkshireWaterData(coordinator=coordinator)
 
+    # Restore the persisted IdP cookie jar (if any) BEFORE the first
+    # refresh. With a live jar the first refresh can use silent
+    # renewal and avoid burning the reCAPTCHA budget on a real-browser
+    # login.
+    coordinator.set_initial_cookies(await load_auth_cookies(hass, entry.entry_id))
+
     # Try to restore the last successful snapshot from local cache. If
     # we have one, sensors show last-known values immediately and we
     # skip the bootstrap login entirely.
@@ -220,8 +231,9 @@ async def async_remove_entry(
     hass: HomeAssistant,
     entry: YorkshireWaterConfigEntry,
 ) -> None:
-    """Drop the cached snapshot when the user removes the integration."""
+    """Drop cached snapshot and IdP cookies when the user removes the integration."""
     await remove_snapshot(hass, entry.entry_id)
+    await remove_auth_cookies(hass, entry.entry_id)
 
 
 async def _async_update_listener(

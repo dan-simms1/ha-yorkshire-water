@@ -43,6 +43,59 @@ def _store(hass: HomeAssistant, entry_id: str) -> Store[dict[str, Any]]:
     return Store(hass, _STORE_VERSION, f"{DOMAIN}.{entry_id}.snapshot")
 
 
+def _auth_store(hass: HomeAssistant, entry_id: str) -> Store[dict[str, Any]]:
+    """Persistent cookie jar separate from the snapshot store.
+
+    Kept in its own file so a corrupted snapshot does not force a
+    fresh browser-bridge login, and a corrupted cookie jar does not
+    blow away the user's last known sensor values.
+    """
+    return Store(hass, _STORE_VERSION, f"{DOMAIN}.{entry_id}.auth")
+
+
+async def load_auth_cookies(
+    hass: HomeAssistant,
+    entry_id: str,
+) -> dict[str, str] | None:
+    """Restore the most recent IdP cookie jar for an entry, if any."""
+    raw = await _auth_store(hass, entry_id).async_load()
+    if not raw or not isinstance(raw, dict):
+        return None
+    cookies = raw.get("cookies")
+    if not isinstance(cookies, dict):
+        return None
+    out: dict[str, str] = {}
+    for name, value in cookies.items():
+        if isinstance(name, str) and isinstance(value, str):
+            out[name] = value
+    return out or None
+
+
+async def save_auth_cookies(
+    hass: HomeAssistant,
+    entry_id: str,
+    cookies: dict[str, str],
+) -> None:
+    """Persist the IdP cookie jar for use across HA restarts.
+
+    Called after every successful silent renewal or browser-bridge
+    login so the rotated session state survives restarts and so the
+    next poll can attempt silent renewal first before reaching for
+    the bridge.
+    """
+    payload: dict[str, Any] = {
+        "saved_at": datetime.now(UTC).isoformat(),
+        "cookies": dict(cookies),
+    }
+    await _auth_store(hass, entry_id).async_save(payload)
+
+
+async def remove_auth_cookies(hass: HomeAssistant, entry_id: str) -> None:
+    """Drop any persisted auth cookies. Called when an entry is removed
+    or when the IdP rejects the stored session as expired."""
+    await _auth_store(hass, entry_id).async_remove()
+
+
 async def load_snapshot(
     hass: HomeAssistant,
     entry_id: str,

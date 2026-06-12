@@ -29,14 +29,24 @@ on Yorkshire Water, not on a broken integration.
 Yorkshire Water's portal protects the login form with invisible Google
 reCAPTCHA v3 and exposes only authorization-code-with-PKCE OAuth flows. Their
 SPA OAuth client is not allowed the password grant, the device flow or
-`offline_access`. Their session cookies have a hard 30-minute server-side cap
-that no silent renewal can extend. The portal sits behind Akamai's
+`offline_access`. Their IdP session has a hard absolute lifetime ceiling that
+no amount of silent renewal will extend. The portal sits behind Akamai's
 edge with bot management enabled.
 
-The integration's answer is to drive a real Chromium browser through the
-login form on every refresh, capture the resulting cookie jar, fetch the
-meter data via the same API the portal SPA uses, and drop the session.
-The next refresh logs in fresh again.
+The integration's answer is two-stage:
+
+1. **Silent renewal first.** Each refresh tries to mint a fresh OAuth bearer
+   token from the persisted IdP cookie jar via `/connect/authorize?prompt=none`.
+   This works for the whole session-ceiling window without ever touching a
+   browser, which means no reCAPTCHA score burn and no Chromium spawned.
+2. **Browser-bridge fallback.** Only when the IdP rejects the cookies as
+   expired (`error=login_required`) does the integration call the companion
+   stealth-browser add-on to drive a real Chromium through the login form,
+   capture the fresh cookie jar, and persist it for subsequent silent renewals.
+
+The rotated `idsrv` / `.AspNetCore.Identity.Application` cookies returned
+by each silent renewal are persisted to HA storage so the integration
+survives restarts without paying for a fresh real-browser login.
 
 You install the integration AND one of the two companion stealth-browser
 add-ons. The add-ons expose the same HTTP flow-runner API, so the
