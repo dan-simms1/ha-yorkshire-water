@@ -329,7 +329,13 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         ref = prop.account_reference or None
 
         details = await client.get_meter_details(account_reference=ref)
-        consumption = await client.get_current_consumption(account_reference=ref)
+        # Smart-meter consumption endpoints take meterReference (the
+        # 10-digit ref returned in meter-details), not the long opaque
+        # account_reference. Pass it through explicitly so multi-property
+        # scoping still works: each property's meter_reference is
+        # resolved from that property's own meter-details fetch above.
+        meter_ref = details.meter_reference or None
+        consumption = await client.get_current_consumption(meter_reference=meter_ref)
 
         meter_status = _derive_meter_status(details, consumption)
 
@@ -338,9 +344,9 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         yearly: list[Any] = []
         if meter_status is MeterStatus.LIVE:
             try:
-                usage = await client.get_your_usage(account_reference=ref)
-                daily = await client.get_daily_consumption(account_reference=ref)
-                yearly = await client.get_yearly_consumption(account_reference=ref)
+                usage = await client.get_your_usage(meter_reference=meter_ref)
+                daily = await client.get_daily_consumption(meter_reference=meter_ref)
+                yearly = await client.get_yearly_consumption(meter_reference=meter_ref)
             except YorkshireWaterAPIError as err:
                 LOGGER.debug(
                     "Per-property consumption fetch failed for %s: %s",
