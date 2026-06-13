@@ -1,1 +1,1 @@
-pyyorkshirewater==1.4.0
+pyyorkshirewater==1.5.0

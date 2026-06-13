@@ -183,6 +183,12 @@ async def async_setup_entry(
     # the next scheduled clock time is the recovery path.
     coordinator.schedule_refreshes()
 
+    # Heartbeat the IdP session between refreshes so the next data
+    # poll can use silent renewal rather than the bridge. Cheap
+    # `/connect/authorize?prompt=none` call every ~5 min; toggleable
+    # via the heartbeat_minutes option (0 = off).
+    coordinator.schedule_heartbeat()
+
     # Update the entry title from the freshly-fetched data. Single-property
     # accounts get a title of the form
     # "Yorkshire Water Smart Meters (Customer: 1234 5678 9012 345 6)".
@@ -273,6 +279,7 @@ async def async_unload_entry(
     """Unload a config entry."""
     coordinator = entry.runtime_data.coordinator
     coordinator.cancel_scheduled_refreshes()
+    coordinator.cancel_heartbeat()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 

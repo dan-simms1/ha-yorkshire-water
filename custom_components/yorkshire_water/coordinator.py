@@ -33,7 +33,7 @@ from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from pyyorkshirewater import (
@@ -65,19 +65,23 @@ from .const import (
     BROWSER_ENGINE_NODRIVER,
     CONF_BROWSER_ENGINE,
     CONF_EMAIL,
+    CONF_HEARTBEAT_MINUTES,
     CONF_NODRIVER_URL,
     CONF_PASSWORD,
     CONF_PLAYWRIGHT_URL,
     CONF_REFRESH_TIME,
     CONF_REFRESHES_PER_DAY,
     DEFAULT_BROWSER_ENGINE,
+    DEFAULT_HEARTBEAT_MINUTES,
     DEFAULT_NODRIVER_URL,
     DEFAULT_PLAYWRIGHT_URL,
     DEFAULT_REFRESH_TIME,
     DEFAULT_REFRESHES_PER_DAY,
     DOMAIN,
     LOGGER,
+    MAX_HEARTBEAT_MINUTES,
     MAX_REFRESHES_PER_DAY,
+    MIN_HEARTBEAT_MINUTES,
     MIN_REFRESHES_PER_DAY,
 )
 
@@ -153,6 +157,7 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         self._email: str = entry.data[CONF_EMAIL]
         self._password: str = entry.data[CONF_PASSWORD]
         self._unsub_callbacks: list[Callable[[], None]] = []
+        self._unsub_heartbeat: Callable[[], None] | None = None
         # IdP cookie jar carried across polls. Populated by
         # `__init__.async_setup_entry` from disk before the first
         # refresh; refreshed in-place from `client.cookies` after
@@ -234,6 +239,122 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
             unsub()
         self._unsub_callbacks.clear()
 
+    def schedule_heartbeat(self) -> None:
+        """Subscribe to the session-keep-alive heartbeat tick.
+
+        YW's IdP idle timeout is around 30 minutes per empirical
+        observation on 2026-06-13. Without a heartbeat, every
+        scheduled refresh (12 hours apart at 2/day) finds the session
+        expired and has to spend a full real-browser bridge login to
+        recover. With a heartbeat every ~5 minutes that calls only
+        the silent renewal endpoint, the session never goes idle and
+        the bridge is reduced to a once-per-session-lifetime cost.
+
+        Reads the interval fresh on every call so config changes via
+        the options flow take effect on the next reload. Cancels any
+        existing subscription first.
+        """
+        self.cancel_heartbeat()
+
+        try:
+            interval = int(
+                self.entry.options.get(
+                    CONF_HEARTBEAT_MINUTES, DEFAULT_HEARTBEAT_MINUTES,
+                ),
+            )
+        except (TypeError, ValueError):
+            interval = DEFAULT_HEARTBEAT_MINUTES
+        interval = max(MIN_HEARTBEAT_MINUTES, min(MAX_HEARTBEAT_MINUTES, interval))
+
+        if interval <= 0:
+            LOGGER.info("YW session heartbeat disabled by configuration")
+            return
+
+        self._unsub_heartbeat = async_track_time_interval(
+            self.hass,
+            self._handle_heartbeat,
+            timedelta(minutes=interval),
+        )
+        LOGGER.info(
+            "Scheduled YW session heartbeat every %d minutes",
+            interval,
+        )
+
+    def cancel_heartbeat(self) -> None:
+        """Drop the heartbeat subscription, if any."""
+        if self._unsub_heartbeat is not None:
+            self._unsub_heartbeat()
+            self._unsub_heartbeat = None
+
+    async def _handle_heartbeat(self, _now: datetime) -> None:
+        """Silent-renew the IdP session to keep cookies fresh.
+
+        Lightweight - runs only `/connect/authorize?prompt=none` plus
+        the code exchange; does NOT fetch meter details, current
+        consumption or any other API data. The IdP rotates the
+        session cookies on each silent renewal and we persist the
+        rotated jar so the next heartbeat and the next data refresh
+        both see fresh cookies.
+
+        On `CookieSessionExpiredError` we drop the stored cookies and
+        let the next scheduled data refresh recover via the browser
+        bridge. We do NOT trigger a bridge login here - the heartbeat
+        is meant to be cheap; if it fails, the next data refresh
+        handles the heavyweight recovery path.
+        """
+        if not self._cookies:
+            LOGGER.debug(
+                "YW heartbeat: no stored cookies; waiting for next "
+                "data refresh to seed via bridge",
+            )
+            return
+
+        async with self._auth_lock:
+            http_client = get_async_client(self.hass)
+            client = YorkshireWaterClient(
+                cookies=self._cookies,
+                http_client=http_client,
+            )
+            try:
+                await client.refresh_token()
+            except CookieSessionExpiredError as err:
+                LOGGER.info(
+                    "YW heartbeat: cookies expired (%s); next data "
+                    "refresh will recover via bridge",
+                    err,
+                )
+                self._cookies = None
+                try:
+                    await remove_auth_cookies(
+                        self.hass, self.entry.entry_id,
+                    )
+                except Exception:
+                    LOGGER.exception(
+                        "Failed to drop expired YW auth cookies from cache",
+                    )
+                return
+            except YorkshireWaterAuthError as err:
+                # Transient auth error - keep cookies, hope next heartbeat works.
+                LOGGER.debug(
+                    "YW heartbeat: transient auth error, ignoring: %s",
+                    err,
+                )
+                return
+            except Exception:
+                LOGGER.exception("Unexpected error during YW session heartbeat")
+                return
+
+            self._cookies = client.cookies
+            try:
+                await save_auth_cookies(
+                    self.hass, self.entry.entry_id, client.cookies,
+                )
+            except Exception:
+                LOGGER.exception(
+                    "Failed to persist rotated YW auth cookies after heartbeat",
+                )
+            LOGGER.debug("YW heartbeat: silent renewal succeeded")
+
     async def _handle_scheduled_refresh(self, _now: datetime) -> None:
         """Time-of-day callback: jitter then trigger a coordinator refresh."""
         delay = random.uniform(0, _SCHEDULE_JITTER_SECONDS)
@@ -247,6 +368,7 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
     async def async_shutdown(self) -> None:
         """Tear down scheduled callbacks before shutting down the coordinator."""
         self.cancel_scheduled_refreshes()
+        self.cancel_heartbeat()
         await super().async_shutdown()
 
     def set_initial_cookies(self, cookies: dict[str, str] | None) -> None:

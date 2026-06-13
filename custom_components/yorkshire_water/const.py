@@ -36,6 +36,15 @@ DEFAULT_BROWSER_ENGINE: Final = BROWSER_ENGINE_NODRIVER
 # Options flow keys.
 CONF_REFRESH_TIME: Final = "refresh_time"
 CONF_REFRESHES_PER_DAY: Final = "refreshes_per_day"
+# Heartbeat keeps the IdP session alive between full data refreshes
+# by running silent renewal (`/connect/authorize?prompt=none`) every
+# `heartbeat_minutes`. YW's IdP idle timeout is around 30 minutes per
+# empirical observation on 2026-06-13; a 5-minute heartbeat sits well
+# under that with margin for jitter. Set the option to 0 to disable.
+CONF_HEARTBEAT_MINUTES: Final = "heartbeat_minutes"
+DEFAULT_HEARTBEAT_MINUTES: Final = 5
+MIN_HEARTBEAT_MINUTES: Final = 0
+MAX_HEARTBEAT_MINUTES: Final = 25  # safely below YW's ~30-min idle
 
 # Refresh schedule defaults.
 #
