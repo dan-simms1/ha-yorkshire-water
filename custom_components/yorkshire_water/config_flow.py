@@ -38,19 +38,23 @@ from .const import (
     BROWSER_ENGINES,
     CONF_BROWSER_ENGINE,
     CONF_EMAIL,
+    CONF_HEARTBEAT_MINUTES,
     CONF_NODRIVER_URL,
     CONF_PASSWORD,
     CONF_PLAYWRIGHT_URL,
     CONF_REFRESH_TIME,
     CONF_REFRESHES_PER_DAY,
     DEFAULT_BROWSER_ENGINE,
+    DEFAULT_HEARTBEAT_MINUTES,
     DEFAULT_NODRIVER_URL,
     DEFAULT_PLAYWRIGHT_URL,
     DEFAULT_REFRESH_TIME,
     DEFAULT_REFRESHES_PER_DAY,
     DOMAIN,
     LOGGER,
+    MAX_HEARTBEAT_MINUTES,
     MAX_REFRESHES_PER_DAY,
+    MIN_HEARTBEAT_MINUTES,
     MIN_REFRESHES_PER_DAY,
 )
 
@@ -267,6 +271,9 @@ class YorkshireWaterOptionsFlow(OptionsFlow):
         current_per_day = entry.options.get(
             CONF_REFRESHES_PER_DAY, DEFAULT_REFRESHES_PER_DAY,
         )
+        current_heartbeat = entry.options.get(
+            CONF_HEARTBEAT_MINUTES, DEFAULT_HEARTBEAT_MINUTES,
+        )
         schema = vol.Schema(
             {
                 vol.Required(
@@ -308,6 +315,18 @@ class YorkshireWaterOptionsFlow(OptionsFlow):
                         ],
                         mode=selector.SelectSelectorMode.DROPDOWN,
                         translation_key=CONF_REFRESHES_PER_DAY,
+                    ),
+                ),
+                vol.Required(
+                    CONF_HEARTBEAT_MINUTES,
+                    default=current_heartbeat,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=MIN_HEARTBEAT_MINUTES,
+                        max=MAX_HEARTBEAT_MINUTES,
+                        step=1,
+                        unit_of_measurement="min",
+                        mode=selector.NumberSelectorMode.BOX,
                     ),
                 ),
             },
