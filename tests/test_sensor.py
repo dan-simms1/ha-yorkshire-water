@@ -40,15 +40,15 @@ async def test_sensors_when_meter_live(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    today = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_today")
     yesterday = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_yesterday")
     window = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_last_8_days")
     meter_ref = hass.states.get(f"sensor.{PROPERTY_SLUG}_meter_reference")
     cumulative = hass.states.get(f"sensor.{PROPERTY_SLUG}_cumulative_consumption")
 
-    assert today is not None
-    assert today.state not in (None, STATE_UNAVAILABLE)
+    # There is no "today" sensor: YW only publish complete daily totals.
+    assert hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_today") is None
     assert yesterday is not None
+    assert yesterday.state not in (None, STATE_UNAVAILABLE)
     assert window is not None
     assert meter_ref is not None
     assert meter_ref.state == "WAKE-001"
@@ -101,12 +101,12 @@ async def test_sensors_unavailable_when_pending(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    today = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_today")
+    yesterday = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_yesterday")
     window = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_last_8_days")
     meter_ref = hass.states.get(f"sensor.{PROPERTY_SLUG}_meter_reference")
 
-    assert today is not None
-    assert today.state == STATE_UNAVAILABLE
+    assert yesterday is not None
+    assert yesterday.state == STATE_UNAVAILABLE
     assert window is not None
     assert window.state == STATE_UNAVAILABLE
     assert meter_ref is not None

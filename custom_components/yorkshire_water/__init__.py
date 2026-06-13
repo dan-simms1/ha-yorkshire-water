@@ -218,6 +218,11 @@ _DEPRECATED_SENSOR_KEYS: tuple[str, ...] = (
     # YW do not expose the actual meter install date anywhere; the
     # account-open date wasn't useful enough to keep on its own.
     "account_start_date",
+    # Removed in v1.6.3. YW only publish complete daily totals, so a
+    # figure for the current (unfinished) day can never exist - these
+    # sensors were structurally always unavailable.
+    "consumption_today",
+    "cost_today",
 )
 
 

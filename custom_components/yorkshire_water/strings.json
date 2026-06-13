@@ -61,14 +61,12 @@
     },
     "entity": {
         "sensor": {
-            "window_consumption": { "name": "Recent consumption" },
-            "consumption_today": { "name": "Consumption today" },
+            "window_consumption": { "name": "Consumption (last 8 days)" },
             "consumption_yesterday": { "name": "Consumption yesterday" },
             "cumulative_consumption": { "name": "Cumulative consumption" },
             "cumulative_cost": { "name": "Cumulative cost" },
-            "cost_today": { "name": "Cost today" },
             "cost_yesterday": { "name": "Cost yesterday" },
-            "last_reading_time": { "name": "Last reading time" },
+            "last_reading_time": { "name": "Last YW reading date" },
             "meter_reference": { "name": "Meter reference" },
             "meter_status": {
                 "name": "Meter status",

@@ -8,8 +8,8 @@
 # 3. Find-replace the placeholder `1_example_street_sometown_anywhere_ex1_1ex`
 #    everywhere with your property's entity-id slug. To find your slug:
 #    Settings -> Devices & Services -> Yorkshire Water -> click your
-#    property device -> any entity, e.g. "Consumption today" -> the
-#    entity_id is `sensor.<slug>_consumption_today`.
+#    property device -> any entity, e.g. "Consumption yesterday" -> the
+#    entity_id is `sensor.<slug>_consumption_yesterday`.
 #
 # Multiple properties
 # -------------------
@@ -18,15 +18,15 @@
 # its own device in Home Assistant and its own entity-id slug
 # derived from the address.
 #
-# "No reading" text on today / yesterday tiles
-# --------------------------------------------
-# By design these sensors render as Unavailable when YW have not yet
-# delivered a reading for that calendar date (the pipeline lags ~2
-# days). HA's frontend uses "Unavailable" as a built-in label that
-# integrations cannot override on a numeric sensor.  If you want them
-# to say "No reading" instead, install HACS frontend mushroom and
-# swap each tile for a `custom:mushroom-template-card`; see
-# dashboards/README.md for the template.
+# "No reading" text on the Yesterday tiles
+# ----------------------------------------
+# The yesterday consumption / cost sensors render as Unavailable on
+# days Yorkshire Water have not yet delivered a reading (their daily
+# pipeline runs a day or more behind). HA's frontend uses
+# "Unavailable" as a built-in label that integrations cannot override
+# on a numeric sensor. If you want them to say "No reading" instead,
+# install HACS frontend mushroom and swap each tile for a
+# `custom:mushroom-template-card`; see dashboards/README.md.
 #
 # This dashboard is unofficial and not affiliated with Yorkshire Water.
 
@@ -74,13 +74,6 @@ views:
       heading_style: title
       icon: mdi:water
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_today
-      name: Today
-      color: blue
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
       entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_yesterday
       name: Yesterday
       color: blue
@@ -108,13 +101,6 @@ views:
       heading: Cost
       heading_style: title
       icon: mdi:currency-gbp
-    - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cost_today
-      name: Today
-      color: green
-      vertical: true
-      tap_action:
-        action: more-info
     - type: tile
       entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cost_yesterday
       name: Yesterday
