@@ -37,9 +37,9 @@ Each refresh the integration does three things:
    the same order: `meter-details`, `current-consumption`, `your-usage`
    (monthly), `daily-consumption`, `yearly-consumption`.
 3. Maps the responses into the Home Assistant sensor entities: meter
-   status, today / yesterday consumption and cost, monthly and
-   year-to-date totals, cumulative consumption and cost for the Energy
-   Dashboard, plus the leak-detection binary sensor.
+   status, yesterday's consumption and cost, an 8-day rolling total,
+   monthly and year-to-date totals, cumulative consumption and cost
+   for the Energy Dashboard, plus the leak-detection binary sensor.
 
 Between scheduled refreshes the integration sends a small
 `/connect/authorize?prompt=none` keep-alive every few minutes so the
@@ -74,12 +74,18 @@ Two specific situations to know about:
 
 ## Daily readings have gaps
 
-In practice Yorkshire Water do not poll smart meters every day. Some
+Yorkshire Water only ever publish a *complete* daily total, and they
+publish it a day or more after the day has ended. There is therefore
+no "consumption today" sensor: a finished total for the current,
+unfinished day cannot exist, and by the time the total is settled the
+day is already "yesterday".
+
+The freshest daily figure the integration can show is **Consumption
+yesterday** / **Cost yesterday**. Even those render as *Unavailable*
+whenever Yorkshire Water have not yet delivered yesterday's reading,
+which is common because they do not poll meters every single day. Some
 days simply have no reading; some weeks have several missing days.
-The `Consumption today` and `Consumption yesterday` sensors will
-render as *Unavailable* whenever Yorkshire Water do not have a reading
-for that calendar date, which is most days. This is the underlying
-data shape, not an integration bug.
+This is the underlying data shape, not an integration bug.
 
 For a value that is always populated, use:
 
@@ -88,11 +94,6 @@ For a value that is always populated, use:
 - **Cumulative consumption**: monotonic total that the Energy
   Dashboard reads. Survives restarts via `RestoreEntity` and only ever
   grows.
-
-The pipeline lag also means the `Consumption today` sensor typically
-shows *Unavailable* for the first day or two of any new calendar day,
-catching up only once Yorkshire Water deliver that day's reading
-(often 1 to 2 days later).
 
 ## How auth works
 
@@ -230,19 +231,34 @@ with the following entities:
 
 | Entity | Type | Notes |
 |---|---|---|
-| Recent consumption | sensor | Sum of the rolling window returned by Yorkshire Water, in litres |
-| Consumption today | sensor | Daily total in litres |
-| Consumption yesterday | sensor | Yesterday's daily total in litres |
-| Cumulative consumption | sensor | Running total in litres for energy-dashboard charts |
-| Cumulative cost | sensor | Running cost total in pounds |
-| Cost today | sensor | Today's cost total in pounds |
+| Consumption (last 8 days) | sensor | Sum of every reading in the last 8 days, in litres |
+| Consumption yesterday | sensor | Yesterday's daily total in litres (Unavailable until YW deliver it) |
 | Cost yesterday | sensor | Yesterday's cost total in pounds |
-| Last reading time | sensor | Diagnostic; date of the most recent point |
+| Consumption this month | sensor | Month-to-date consumption in litres |
+| Consumption last month | sensor | Previous calendar month's consumption |
+| Clean water cost this month | sensor | Month-to-date clean-water charge |
+| Sewerage cost this month | sensor | Month-to-date sewerage charge |
+| Total cost this month | sensor | Month-to-date total charge (clean water plus sewerage) |
+| Total cost last month | sensor | Previous calendar month's total charge |
+| Consumption year to date | sensor | Year-to-date consumption in litres |
+| Cost year to date | sensor | Year-to-date total charge |
+| Average monthly consumption | sensor | Mean monthly consumption across the year |
+| Average monthly cost | sensor | Mean monthly charge across the year |
+| Cumulative consumption | sensor | Monotonic running total in litres for the Energy Dashboard |
+| Cumulative cost | sensor | Monotonic running cost total in pounds |
+| Continuous flow rate | sensor | Leak-detection flow rate in litres/hour (0 when no leak) |
+| Continuous flow cost per day | sensor | Projected daily cost of a detected leak (0 when no leak) |
+| Last YW reading date | sensor | Diagnostic; the date Yorkshire Water last read the meter (date only, not a precise time) |
+| Last update time | sensor | Diagnostic; when YW last refreshed their summary |
 | Meter reference | sensor | Diagnostic; the meter identifier |
-| Meter status | sensor | Diagnostic; always available. One of *No meter installed*, *Awaiting activation by Yorkshire Water*, *Live*. |
+| Meter status | sensor | Always available. One of *No meter installed*, *Awaiting activation by Yorkshire Water*, *Live*. |
 | Continuous flow alarm | binary sensor | Yorkshire Water's leak alert |
 | Meter active | binary sensor | Diagnostic; true once the meter is live |
 | Refresh now | button | Manually trigger a coordinator refresh |
+
+There is deliberately no "consumption today" or "cost today" entity:
+Yorkshire Water only publish complete daily totals, so a figure for
+the current day cannot exist (see *Daily readings have gaps* above).
 
 Multi-property accounts get one device per property.
 

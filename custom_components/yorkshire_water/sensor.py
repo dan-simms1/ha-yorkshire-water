@@ -73,11 +73,11 @@ def _window_sum(data: PropertyData) -> float | None:
 def _point_for_date(data: PropertyData, target: date) -> Any | None:
     """Return the daily point whose date matches `target`, or None.
 
-    Strict calendar-date matching: YW's daily-consumption pipeline
-    lags by ~2 days, so "consumption today" can be honest only when
-    YW have actually delivered a reading for today. Showing yesterday's
-    reading labelled as today would mis-attribute usage in long-term
-    stats.
+    Strict calendar-date matching. YW only ever publish a COMPLETE
+    daily total, so the freshest day they can deliver is yesterday
+    (and only once their pipeline catches up, which is usually a day
+    later). There is deliberately no "today" sensor: a finished daily
+    total cannot exist for a day that has not ended.
     """
     for point in _sorted_dated_points(data):
         if point.point_date == target:
@@ -85,23 +85,10 @@ def _point_for_date(data: PropertyData, target: date) -> Any | None:
     return None
 
 
-def _today_consumption(data: PropertyData) -> float | None:
-    """Return today's consumption (litres). Sensor is unavailable until YW delivers it."""
-    point = _point_for_date(data, dt_util.now().date())
-    return getattr(point, "total_consumption_litres", None) if point else None
-
-
 def _yesterday_consumption(data: PropertyData) -> float | None:
     """Return yesterday's consumption (litres). Unavailable until YW delivers it."""
     point = _point_for_date(data, dt_util.now().date() - timedelta(days=1))
     return getattr(point, "total_consumption_litres", None) if point else None
-
-
-def _has_today_reading(data: PropertyData) -> bool:
-    """True only when YW have delivered a reading for today's calendar date."""
-    if not _live_only(data):
-        return False
-    return _point_for_date(data, dt_util.now().date()) is not None
 
 
 def _has_yesterday_reading(data: PropertyData) -> bool:
@@ -112,11 +99,15 @@ def _has_yesterday_reading(data: PropertyData) -> bool:
 
 
 def _last_reading_time(data: PropertyData) -> datetime | None:
-    """Return when the meter was last read.
+    """Return the date Yorkshire Water last read the meter.
 
-    Prefers `current_consumption.latest_data_date` (always populated for
-    a live meter, single API call), falls back to the most recent
-    daily-series point for installs where daily data is available.
+    This is the date YW logged a reading, NOT when the integration last
+    polled. The API exposes `latestDataDate` as a date only (no time of
+    day), so we anchor it to midnight UTC; do not read precision into
+    the time component. Prefers `current_consumption.latest_data_date`
+    (always populated for a live meter, single API call), falls back to
+    the most recent daily-series point for installs where daily data is
+    available.
     """
     if data.current_consumption and data.current_consumption.latest_data_date:
         d = data.current_consumption.latest_data_date
@@ -141,12 +132,6 @@ def _meter_reference(data: PropertyData) -> str | None:
     if data.meter_details is None:
         return None
     return data.meter_details.meter_reference
-
-
-def _today_cost(data: PropertyData) -> float | None:
-    """Return today's full water bill (inc. sewerage) if YW have a reading."""
-    point = _point_for_date(data, dt_util.now().date())
-    return getattr(point, "total_cost", None) if point else None
 
 
 def _yesterday_cost(data: PropertyData) -> float | None:
@@ -264,20 +249,11 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         value_fn=_window_sum,
         available_fn=_live_only,
     ),
-    YorkshireWaterSensorEntityDescription(
-        key="consumption_today",
-        translation_key="consumption_today",
-        name="Consumption today",
-        device_class=SensorDeviceClass.WATER,
-        state_class=SensorStateClass.TOTAL,
-        native_unit_of_measurement=UnitOfVolume.LITERS,
-        suggested_display_precision=1,
-        value_fn=_today_consumption,
-        # Unavailable rather than Unknown when YW hasn't delivered
-        # today's reading yet - clearer signal to the user that the
-        # data source doesn't have it (vs. integration not knowing).
-        available_fn=_has_today_reading,
-    ),
+    # NOTE: there is deliberately no "consumption today" / "cost today"
+    # sensor. YW only publish COMPLETE daily totals, so a figure for the
+    # current (unfinished) day cannot exist - by the time the day's total
+    # is settled, the calendar has rolled over and it is "yesterday". A
+    # "today" sensor would therefore be permanently unavailable.
     YorkshireWaterSensorEntityDescription(
         key="consumption_yesterday",
         translation_key="consumption_yesterday",
@@ -288,17 +264,6 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         suggested_display_precision=1,
         value_fn=_yesterday_consumption,
         available_fn=_has_yesterday_reading,
-    ),
-    YorkshireWaterSensorEntityDescription(
-        key="cost_today",
-        translation_key="cost_today",
-        name="Cost today",
-        device_class=SensorDeviceClass.MONETARY,
-        state_class=SensorStateClass.TOTAL,
-        native_unit_of_measurement="GBP",
-        suggested_display_precision=2,
-        value_fn=_today_cost,
-        available_fn=_has_today_reading,
     ),
     YorkshireWaterSensorEntityDescription(
         key="cost_yesterday",
@@ -314,7 +279,7 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
     YorkshireWaterSensorEntityDescription(
         key="last_reading_time",
         translation_key="last_reading_time",
-        name="Last reading time",
+        name="Last YW reading date",
         device_class=SensorDeviceClass.TIMESTAMP,
         value_fn=_last_reading_time,
         available_fn=_live_only,
