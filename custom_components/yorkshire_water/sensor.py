@@ -86,15 +86,29 @@ def _point_for_date(data: PropertyData, target: date) -> Any | None:
 
 
 def _today_consumption(data: PropertyData) -> float | None:
-    """Return today's consumption (litres) if YW have a reading for today."""
+    """Return today's consumption (litres). Sensor is unavailable until YW delivers it."""
     point = _point_for_date(data, dt_util.now().date())
     return getattr(point, "total_consumption_litres", None) if point else None
 
 
 def _yesterday_consumption(data: PropertyData) -> float | None:
-    """Return yesterday's consumption (litres) if YW have a reading for it."""
+    """Return yesterday's consumption (litres). Unavailable until YW delivers it."""
     point = _point_for_date(data, dt_util.now().date() - timedelta(days=1))
     return getattr(point, "total_consumption_litres", None) if point else None
+
+
+def _has_today_reading(data: PropertyData) -> bool:
+    """True only when YW have delivered a reading for today's calendar date."""
+    if not _live_only(data):
+        return False
+    return _point_for_date(data, dt_util.now().date()) is not None
+
+
+def _has_yesterday_reading(data: PropertyData) -> bool:
+    """True only when YW have delivered a reading for yesterday's calendar date."""
+    if not _live_only(data):
+        return False
+    return _point_for_date(data, dt_util.now().date() - timedelta(days=1)) is not None
 
 
 def _last_reading_time(data: PropertyData) -> datetime | None:
@@ -237,7 +251,12 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
     YorkshireWaterSensorEntityDescription(
         key="window_consumption",
         translation_key="window_consumption",
-        name="Recent consumption",
+        # Name reflects the actual window the coordinator fetches (8
+        # days), not a vague "Recent". The same data feeds the
+        # cumulative sensors used by the HA Energy dashboard, so
+        # users browsing entities should know which timeframe this
+        # one covers.
+        name="Consumption (last 8 days)",
         device_class=SensorDeviceClass.WATER,
         state_class=SensorStateClass.TOTAL,
         native_unit_of_measurement=UnitOfVolume.LITERS,
@@ -254,7 +273,10 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfVolume.LITERS,
         suggested_display_precision=1,
         value_fn=_today_consumption,
-        available_fn=_live_only,
+        # Unavailable rather than Unknown when YW hasn't delivered
+        # today's reading yet - clearer signal to the user that the
+        # data source doesn't have it (vs. integration not knowing).
+        available_fn=_has_today_reading,
     ),
     YorkshireWaterSensorEntityDescription(
         key="consumption_yesterday",
@@ -265,7 +287,7 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfVolume.LITERS,
         suggested_display_precision=1,
         value_fn=_yesterday_consumption,
-        available_fn=_live_only,
+        available_fn=_has_yesterday_reading,
     ),
     YorkshireWaterSensorEntityDescription(
         key="cost_today",
@@ -276,7 +298,7 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         native_unit_of_measurement="GBP",
         suggested_display_precision=2,
         value_fn=_today_cost,
-        available_fn=_live_only,
+        available_fn=_has_today_reading,
     ),
     YorkshireWaterSensorEntityDescription(
         key="cost_yesterday",
@@ -287,7 +309,7 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         native_unit_of_measurement="GBP",
         suggested_display_precision=2,
         value_fn=_yesterday_cost,
-        available_fn=_live_only,
+        available_fn=_has_yesterday_reading,
     ),
     YorkshireWaterSensorEntityDescription(
         key="last_reading_time",

@@ -141,15 +141,29 @@ def _current_consumption(*, live: bool, alarm: bool = False) -> CurrentConsumpti
 
 
 def _daily_points() -> list[DailyConsumptionPoint]:
+    """Three days of daily points anchored at HA's "now" so the
+    today/yesterday sensors (which match by calendar date) populate
+    consistently regardless of when the suite runs.
+    """
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    today = dt_util.now().date()
+    yesterday = today - timedelta(days=1)
+    day_before = today - timedelta(days=2)
     return [
         DailyConsumptionPoint.from_api(
-            {"date": "2026-05-04", "totalConsumptionLitres": 95.0, "totalCost": 0.30},
+            {"date": day_before.isoformat(),
+             "totalConsumptionLitres": 95.0, "totalCost": 0.30},
         ),
         DailyConsumptionPoint.from_api(
-            {"date": "2026-05-05", "totalConsumptionLitres": 110.5, "totalCost": 0.36},
+            {"date": yesterday.isoformat(),
+             "totalConsumptionLitres": 110.5, "totalCost": 0.36},
         ),
         DailyConsumptionPoint.from_api(
-            {"date": "2026-05-06", "totalConsumptionLitres": 78.0, "totalCost": 0.25},
+            {"date": today.isoformat(),
+             "totalConsumptionLitres": 78.0, "totalCost": 0.25},
         ),
     ]
 
