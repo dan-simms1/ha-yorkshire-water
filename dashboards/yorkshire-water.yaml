@@ -195,7 +195,7 @@ views:
     - type: statistics-graph
       title: Monthly consumption
       entities:
-      - sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_this_month
+      - yorkshire_water:monthly_consumption_1234567890123456
       period: month
       stat_types:
       - state
@@ -204,7 +204,7 @@ views:
     - type: statistics-graph
       title: Monthly cost
       entities:
-      - sensor.1_example_street_sometown_anywhere_ex1_1ex_total_cost_this_month
+      - yorkshire_water:monthly_cost_1234567890123456
       period: month
       stat_types:
       - state

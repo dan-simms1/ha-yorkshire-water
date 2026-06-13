@@ -19,8 +19,8 @@ address; entity IDs include the address slug).
 ## Finding your property's slug
 
 Settings → Devices & Services → Yorkshire Water → click your property
-device → click any entity, e.g. *Consumption today*. The entity
-shows as `sensor.<slug>_consumption_today`; copy the `<slug>` part.
+device → click any entity, e.g. *Consumption yesterday*. The entity
+shows as `sensor.<slug>_consumption_yesterday`; copy the `<slug>` part.
 
 The slug is derived from the property's address. For an account
 registered to *1 Example Street, Sometown, Anywhere, EX1 1EX*
@@ -35,29 +35,46 @@ slug in the duplicate with your second property's slug.
 
 ## What you get
 
-- **Status** row: meter active state, leak alert, last reading time.
-- **Consumption** tiles: today, yesterday, last 8 days rolling, total
-  tracked.
-- **Cost** tiles: today, yesterday, total tracked.
-- **Daily consumption / cost** statistics charts (last 30 days), backed
-  by the cumulative sensors.
-- **Recent activity** history graph for the last week.
-- **Diagnostics** entities list.
-- **Monthly** row: consumption and cost for this and last month, plus
-  two `statistics-graph` bar charts showing the monthly trend. The
-  charts fill in over time as the cumulative sensors accumulate
-  long-term statistics.
+The view is ordered most-useful first:
 
-The cumulative sensors drive the statistics charts and are also
-suitable as a source for Home Assistant's built-in Energy
-Dashboard (under *Water consumption*).
+- **Status** row: meter active, leak alert, last YW reading date.
+- **Consumption** row: yesterday, last 8 days rolling, total tracked.
+- **Cost** row: yesterday, total tracked.
+- **Monthly** row: consumption and cost for this and last month.
+- **Year to date** row: consumption, cost, and monthly averages.
+- **Trends** row: monthly consumption and cost bar charts, plus daily
+  consumption and cost line charts.
+- **Diagnostics** entities list.
+
+The cumulative sensors drive the daily charts and are also suitable as
+a source for Home Assistant's built-in Energy Dashboard (under *Water
+consumption*).
+
+## Monthly bar charts use external statistics
+
+The two monthly bar charts in the **Trends** row do not read a sensor.
+They read external long-term statistics that the integration backfills
+from Yorkshire Water's `yearly-consumption` endpoint:
+
+    yorkshire_water:monthly_consumption_<display_account_reference>
+    yorkshire_water:monthly_cost_<display_account_reference>
+
+This means the chart shows real monthly totals from the very first
+poll, including months from before the integration was installed, with
+no waiting for history to accrue.
+
+The `<display_account_reference>` is your property's 16-digit account
+number with no spaces. Find it under Settings -> Devices & Services ->
+Yorkshire Water -> your property device (it is also the basis of the
+entity-id slug). The sample uses the placeholder
+`1234567890123456`; replace it with yours.
 
 ## "No reading" instead of "Unavailable"
 
-The today / yesterday consumption and cost sensors render as
-*Unavailable* on days Yorkshire Water have not yet delivered a reading
-(see the main project README for why). Home Assistant's frontend uses
-*Unavailable* as a built-in label that integrations cannot override on
+The yesterday consumption and cost sensors render as *Unavailable* on
+days Yorkshire Water have not yet delivered a reading (see the main
+project README for why). Home Assistant's frontend uses *Unavailable*
+as a built-in label that integrations cannot override on
 a numeric sensor.
 
 If you want those tiles to say *No reading* instead, install the HACS
@@ -66,8 +83,8 @@ frontend `mushroom` add-on and replace each tile card with a
 
 ```yaml
 type: custom:mushroom-template-card
-entity: sensor.<slug>_consumption_today
-primary: Today
+entity: sensor.<slug>_consumption_yesterday
+primary: Yesterday
 secondary: >-
   {% set s = states(config.entity) %}
   {% if s in ['unavailable', 'unknown', 'none'] %}
