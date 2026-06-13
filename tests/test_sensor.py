@@ -42,7 +42,7 @@ async def test_sensors_when_meter_live(
 
     today = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_today")
     yesterday = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_yesterday")
-    window = hass.states.get(f"sensor.{PROPERTY_SLUG}_recent_consumption")
+    window = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_last_8_days")
     meter_ref = hass.states.get(f"sensor.{PROPERTY_SLUG}_meter_reference")
     cumulative = hass.states.get(f"sensor.{PROPERTY_SLUG}_cumulative_consumption")
 
@@ -102,7 +102,7 @@ async def test_sensors_unavailable_when_pending(
     await hass.async_block_till_done()
 
     today = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_today")
-    window = hass.states.get(f"sensor.{PROPERTY_SLUG}_recent_consumption")
+    window = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_last_8_days")
     meter_ref = hass.states.get(f"sensor.{PROPERTY_SLUG}_meter_reference")
 
     assert today is not None

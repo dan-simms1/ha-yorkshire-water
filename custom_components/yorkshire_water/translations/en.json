@@ -61,7 +61,7 @@
     },
     "entity": {
         "sensor": {
-            "window_consumption": { "name": "Recent consumption" },
+            "window_consumption": { "name": "Consumption (last 8 days)" },
             "consumption_today": { "name": "Consumption today" },
             "consumption_yesterday": { "name": "Consumption yesterday" },
             "cumulative_consumption": { "name": "Cumulative consumption" },
