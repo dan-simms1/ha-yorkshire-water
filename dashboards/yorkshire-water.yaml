@@ -14,226 +14,247 @@
 # Multiple properties
 # -------------------
 # If you have more than one property on your YW account, copy the
-# "Property" view and adjust the slug for each. Each property has its
-# own device in Home Assistant and its own entity-id slug derived
-# from the address.
+# "Smart Meter" view and adjust the slug for each. Each property has
+# its own device in Home Assistant and its own entity-id slug
+# derived from the address.
+#
+# "No reading" text on today / yesterday tiles
+# --------------------------------------------
+# By design these sensors render as Unavailable when YW have not yet
+# delivered a reading for that calendar date (the pipeline lags ~2
+# days). HA's frontend uses "Unavailable" as a built-in label that
+# integrations cannot override on a numeric sensor.  If you want them
+# to say "No reading" instead, install HACS frontend mushroom and
+# swap each tile for a `custom:mushroom-template-card`; see
+# dashboards/README.md for the template.
 #
 # This dashboard is unofficial and not affiliated with Yorkshire Water.
 
 title: Yorkshire Water
 views:
-  - title: Smart Meter
-    path: smart-meter
-    icon: mdi:water-pump
-    type: sections
-    max_columns: 3
-    sections:
+- title: Smart Meter
+  path: smart-meter
+  icon: mdi:water-pump
+  type: sections
+  max_columns: 3
+  sections:
+  - type: grid
+    column_span: 3
+    cards:
+    - type: heading
+      heading: Status
+      heading_style: title
+      icon: mdi:water-check
+    - type: tile
+      entity: binary_sensor.1_example_street_sometown_anywhere_ex1_1ex_meter_active
+      name: Meter
+      color: blue
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: binary_sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_alarm
+      name: Leak alert
+      color: red
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_last_reading_time
+      name: Last reading
+      color: grey
+      vertical: true
+      tap_action:
+        action: more-info
+  - type: grid
+    column_span: 3
+    cards:
+    - type: heading
+      heading: Consumption
+      heading_style: title
+      icon: mdi:water
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_today
+      name: Today
+      color: blue
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_yesterday
+      name: Yesterday
+      color: blue
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_recent_consumption
+      name: Last 8 days
+      color: blue
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_consumption
+      name: Total tracked
+      color: blue
+      vertical: true
+      tap_action:
+        action: more-info
+  - type: grid
+    column_span: 3
+    cards:
+    - type: heading
+      heading: Cost
+      heading_style: title
+      icon: mdi:currency-gbp
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cost_today
+      name: Today
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cost_yesterday
+      name: Yesterday
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_cost
+      name: Total tracked
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+  - type: grid
+    column_span: 3
+    cards:
+    - type: heading
+      heading: Monthly
+      heading_style: title
+      icon: mdi:calendar-month
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_this_month
+      name: This month
+      color: blue
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_last_month
+      name: Last month
+      color: blue
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_total_cost_this_month
+      name: Cost this month
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_total_cost_last_month
+      name: Cost last month
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+  - type: grid
+    column_span: 3
+    cards:
+    - type: heading
+      heading: Year to date
+      heading_style: title
+      icon: mdi:calendar-clock
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_year_to_date
+      name: Consumption YTD
+      color: blue
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cost_year_to_date
+      name: Cost YTD
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_average_monthly_consumption
+      name: Avg monthly use
+      color: blue
+      vertical: true
+      tap_action:
+        action: more-info
+    - type: tile
+      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_average_monthly_cost
+      name: Avg monthly cost
+      color: green
+      vertical: true
+      tap_action:
+        action: more-info
+  - type: grid
+    column_span: 3
+    cards:
+    - type: heading
+      heading: Trends
+      heading_style: title
+      icon: mdi:chart-bar
+    - type: statistics-graph
+      title: Monthly consumption
+      entities:
+      - sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_consumption
+      period: month
+      stat_types:
+      - change
+      chart_type: bar
+      days_to_show: 365
+    - type: statistics-graph
+      title: Monthly cost
+      entities:
+      - sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_cost
+      period: month
+      stat_types:
+      - change
+      chart_type: bar
+      days_to_show: 365
+    - type: statistics-graph
+      title: Daily consumption
+      entities:
+      - sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_consumption
+      period: day
+      stat_types:
+      - change
+      chart_type: line
+      days_to_show: 30
+    - type: statistics-graph
+      title: Daily cost
+      entities:
+      - sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_cost
+      period: day
+      stat_types:
+      - change
+      chart_type: line
+      days_to_show: 30
+  - type: grid
+    column_span: 3
+    cards:
+    - type: heading
+      heading: Diagnostics
+      heading_style: title
+      icon: mdi:wrench
+    - type: entities
+      entities:
+      - sensor.1_example_street_sometown_anywhere_ex1_1ex_meter_reference
+      - sensor.1_example_street_sometown_anywhere_ex1_1ex_last_reading_time
+      - sensor.1_example_street_sometown_anywhere_ex1_1ex_last_update_time
+      - sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_rate
+      - sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_cost_per_day
+      show_header_toggle: false
 
-      # ------------------------------------------------------------
-      # STATUS
-      # ------------------------------------------------------------
-      - type: grid
-        column_span: 3
-        cards:
-          - type: heading
-            heading: Status
-            heading_style: title
-            icon: mdi:water-check
-
-          - type: tile
-            entity: binary_sensor.1_example_street_sometown_anywhere_ex1_1ex_meter_active
-            name: Meter
-            color: blue
-            vertical: true
-            tap_action:
-              action: more-info
-
-          - type: tile
-            entity: binary_sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_alarm
-            name: Leak alert
-            color: red
-            vertical: true
-            tap_action:
-              action: more-info
-
-          - type: tile
-            entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_last_reading_time
-            name: Last reading
-            color: grey
-            vertical: true
-
-      # ------------------------------------------------------------
-      # CONSUMPTION
-      # ------------------------------------------------------------
-      - type: grid
-        cards:
-          - type: heading
-            heading: Consumption
-            heading_style: title
-            icon: mdi:water
-
-          - type: tile
-            entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_today
-            name: Today
-            color: blue
-            vertical: true
-            features_position: bottom
-
-          - type: tile
-            entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_yesterday
-            name: Yesterday
-            color: blue
-            vertical: true
-
-          - type: tile
-            entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_recent_consumption
-            name: Recent window
-            color: blue
-            vertical: true
-
-          - type: tile
-            entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_consumption
-            name: Total tracked
-            color: blue
-            vertical: true
-
-      # ------------------------------------------------------------
-      # COST
-      # ------------------------------------------------------------
-      - type: grid
-        cards:
-          - type: heading
-            heading: Cost
-            heading_style: title
-            icon: mdi:currency-gbp
-
-          - type: tile
-            entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cost_today
-            name: Today
-            color: green
-            vertical: true
-
-          - type: tile
-            entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cost_yesterday
-            name: Yesterday
-            color: green
-            vertical: true
-
-          - type: tile
-            entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_cost
-            name: Total tracked
-            color: green
-            vertical: true
-
-      # ------------------------------------------------------------
-      # CONSUMPTION TREND (last 30 days from long-term statistics)
-      # ------------------------------------------------------------
-      - type: grid
-        column_span: 2
-        cards:
-          - type: heading
-            heading: Daily consumption
-            heading_style: title
-            icon: mdi:chart-bar
-
-          - type: statistics-graph
-            entities:
-              - sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_consumption
-            days_to_show: 30
-            period: day
-            stat_types:
-              - change
-            chart_type: bar
-
-      # ------------------------------------------------------------
-      # COST TREND
-      # ------------------------------------------------------------
-      - type: grid
-        cards:
-          - type: heading
-            heading: Daily cost
-            heading_style: title
-            icon: mdi:chart-line
-
-          - type: statistics-graph
-            entities:
-              - sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_cost
-            days_to_show: 30
-            period: day
-            stat_types:
-              - change
-            chart_type: bar
-
-      # ------------------------------------------------------------
-      # RECENT ACTIVITY
-      # ------------------------------------------------------------
-      - type: grid
-        column_span: 3
-        cards:
-          - type: heading
-            heading: Recent activity
-            heading_style: title
-            icon: mdi:history
-
-          - type: history-graph
-            hours_to_show: 168
-            entities:
-              - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_today
-              - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_yesterday
-              - entity: binary_sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_alarm
-
-      # ------------------------------------------------------------
-      # DIAGNOSTICS (collapsed by default)
-      # ------------------------------------------------------------
-      - type: grid
-        column_span: 3
-        cards:
-          - type: heading
-            heading: Diagnostics
-            heading_style: title
-            icon: mdi:cog
-
-          - type: entities
-            entities:
-              - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_meter_reference
-                name: Meter reference
-              - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_last_reading_time
-                name: Last reading time
-              - entity: binary_sensor.1_example_street_sometown_anywhere_ex1_1ex_meter_active
-                name: Meter active
-              - entity: binary_sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_alarm
-                name: Continuous flow alarm
-            state_color: true
-
-      # ------------------------------------------------------------
-      # ABOUT
-      # ------------------------------------------------------------
-      - type: grid
-        column_span: 3
-        cards:
-          - type: markdown
-            content: >
-              ### About this dashboard
-
-
-              The Yorkshire Water integration polls once every 24 hours
-              by default. Yorkshire Water's smart-meter feed lands
-              every 4 to 24 hours upstream, so polling more often does
-              not give you fresher data.
-
-
-              The cumulative sensors are monotonic: they only ever
-              increase, even if a poll returns less data. They drive
-              the statistics graphs above and are suitable for the
-              Energy Dashboard's Water section.
-
-
-              When the meter status is `pending_activation` (smart
-              meter installed but not yet on the YW network) the
-              consumption sensors stay unavailable. They will populate
-              automatically on the first refresh after the meter goes
-              live.
-
-
-              This dashboard is **unofficial and not affiliated with
-              Yorkshire Water Services Limited**.

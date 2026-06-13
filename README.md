@@ -24,6 +24,76 @@ no real data to surface. The Meter status sensor itself stays available
 throughout the rollout so the dashboard makes it clear that you are waiting
 on Yorkshire Water, not on a broken integration.
 
+## How the integration works
+
+Each refresh the integration does three things:
+
+1. Mints a fresh access token from Yorkshire Water's OAuth IdP. Most of
+   the time that is a lightweight silent renewal against stored
+   cookies; only when those cookies have died does it call the
+   companion stealth-browser add-on to drive a real Chromium through
+   the login form.
+2. Calls the same private API the `my.yorkshirewater.com` SPA uses, in
+   the same order: `meter-details`, `current-consumption`, `your-usage`
+   (monthly), `daily-consumption`, `yearly-consumption`.
+3. Maps the responses into the Home Assistant sensor entities: meter
+   status, today / yesterday consumption and cost, monthly and
+   year-to-date totals, cumulative consumption and cost for the Energy
+   Dashboard, plus the leak-detection binary sensor.
+
+Between scheduled refreshes the integration sends a small
+`/connect/authorize?prompt=none` keep-alive every few minutes so the
+IdP session never goes idle. That means the browser bridge is
+typically only invoked on first install (no stored cookies yet) or
+after you have explicitly logged out of Yorkshire Water somewhere.
+
+## If you do not see consumption data
+
+**Check the Yorkshire Water portal first.** The integration is a thin
+wrapper around the same private API that powers
+`my.yorkshirewater.com`. If your consumption data is not visible at
+`my.yorkshirewater.com/account/your-usage` when you log in there, the
+integration cannot surface it either. There is no separate data path.
+
+Two specific situations to know about:
+
+- **New smart meter recently fitted.** It usually takes Yorkshire
+  Water a few weeks after installation for daily consumption data to
+  start flowing into the portal. During that window the meter status
+  sensor sits at *Awaiting activation by Yorkshire Water* and the
+  consumption sensors stay *unavailable*. That is expected; nothing to
+  do at the integration end.
+- **Your first bill arrives but daily data still does not.** If you
+  receive your first water bill after the new meter went in and the
+  bill is clearly based on an electronic reading (i.e. Yorkshire Water
+  did read the meter) but the daily data still has not appeared in
+  the portal or this integration, contact Yorkshire Water customer
+  services. There is sometimes a back-office step that has to happen
+  before daily telemetry reaches the customer-facing portal, and only
+  Yorkshire Water can trigger it.
+
+## Daily readings have gaps
+
+In practice Yorkshire Water do not poll smart meters every day. Some
+days simply have no reading; some weeks have several missing days.
+The `Consumption today` and `Consumption yesterday` sensors will
+render as *Unavailable* whenever Yorkshire Water do not have a reading
+for that calendar date, which is most days. This is the underlying
+data shape, not an integration bug.
+
+For a value that is always populated, use:
+
+- **Consumption (last 8 days)**: sum of every reading that landed in
+  the last 8 days, ignoring gaps.
+- **Cumulative consumption**: monotonic total that the Energy
+  Dashboard reads. Survives restarts via `RestoreEntity` and only ever
+  grows.
+
+The pipeline lag also means the `Consumption today` sensor typically
+shows *Unavailable* for the first day or two of any new calendar day,
+catching up only once Yorkshire Water deliver that day's reading
+(often 1 to 2 days later).
+
 ## How auth works
 
 Yorkshire Water's portal protects the login form with invisible Google
@@ -72,7 +142,7 @@ installs get the new default.
 
 ## Install
 
-### Step 1 — install one (or both) browser add-ons
+### Step 1: install one (or both) browser add-ons
 
 In Home Assistant:
 
@@ -84,7 +154,7 @@ In Home Assistant:
 4. Find the relevant addon in the store and install it. Defaults are fine.
 5. Start the add-on.
 
-### Step 2 — install this integration
+### Step 2: install this integration
 
 #### Via HACS
 
@@ -99,7 +169,7 @@ In Home Assistant:
 Copy `custom_components/yorkshire_water` into your Home Assistant
 `custom_components/` directory and restart.
 
-### Step 3 — configure
+### Step 3: configure
 
 Provide:
 
@@ -124,7 +194,7 @@ Settings → Devices and Services → Yorkshire Water → **Configure**:
 | Refresh time of day | `00:00:00` | Local time of the first refresh each day. |
 | Refreshes per day | `1` | 1, 2, 3 or 4. The day is divided evenly from the refresh time. |
 
-Each scheduled fire jitters by 0–5 minutes so the actual login does not arrive
+Each scheduled fire jitters by 0 to 5 minutes so the actual login does not arrive
 exactly on the minute (a behavioural fingerprint signal).
 
 The recommended setting is `1` refresh per day at a time that suits you.
