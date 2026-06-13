@@ -395,10 +395,13 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
     YorkshireWaterSensorEntityDescription(
         key="average_monthly_consumption",
         name="Average monthly consumption",
-        device_class=SensorDeviceClass.WATER,
-        # An average is neither a measurement nor an accumulator. No
-        # state_class - HA's long-term stats system handles it as a
-        # plain value.
+        # WATER device class only permits state_class=total /
+        # total_increasing / none. Averages are neither. Drop the
+        # device_class so we can use state_class=measurement, which
+        # lets HA's long-term-stats engine track how the average
+        # shifts as more months land. The unit (litres) survives,
+        # we just lose the "water drop" icon - acceptable trade.
+        state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfVolume.LITERS,
         suggested_display_precision=0,
         value_fn=_monthly_avg_consumption,
@@ -407,8 +410,10 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
     YorkshireWaterSensorEntityDescription(
         key="average_monthly_cost",
         name="Average monthly cost",
-        device_class=SensorDeviceClass.MONETARY,
-        # Average; no state_class. See above.
+        # MONETARY only permits state_class=total / none. Same
+        # trade-off as the consumption average above: drop the
+        # device_class so the MEASUREMENT state class can stand.
+        state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement="GBP",
         suggested_display_precision=2,
         value_fn=_monthly_avg_cost,
