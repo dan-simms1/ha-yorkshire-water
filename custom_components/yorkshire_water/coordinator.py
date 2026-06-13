@@ -84,6 +84,7 @@ from .const import (
     MIN_HEARTBEAT_MINUTES,
     MIN_REFRESHES_PER_DAY,
 )
+from .statistics import async_import_monthly_statistics
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -555,6 +556,19 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
             await save_snapshot(self.hass, self.entry.entry_id, snapshot)
         except Exception:
             LOGGER.exception("Failed to persist YW snapshot to cache")
+
+        # Backfill monthly totals into long-term statistics so the
+        # monthly bar chart shows real history (including months from
+        # before the integration was installed). Isolated so a recorder
+        # import failure can never fail the data refresh.
+        for prop_data in property_snapshots:
+            try:
+                async_import_monthly_statistics(self.hass, prop_data)
+            except Exception:
+                LOGGER.exception(
+                    "Failed to import YW monthly statistics for %s",
+                    prop_data.property.display_account_reference,
+                )
 
         LOGGER.debug("YW refresh succeeded via %s", source)
         return snapshot
