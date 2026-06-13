@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from homeassistant.components.sensor import (
@@ -20,6 +20,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import EntityCategory, UnitOfVolume
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.util import dt as dt_util
 from pyyorkshirewater import MeterStatus
 
 from .const import (
@@ -69,20 +70,31 @@ def _window_sum(data: PropertyData) -> float | None:
     return total if found else None
 
 
+def _point_for_date(data: PropertyData, target: date) -> Any | None:
+    """Return the daily point whose date matches `target`, or None.
+
+    Strict calendar-date matching: YW's daily-consumption pipeline
+    lags by ~2 days, so "consumption today" can be honest only when
+    YW have actually delivered a reading for today. Showing yesterday's
+    reading labelled as today would mis-attribute usage in long-term
+    stats.
+    """
+    for point in _sorted_dated_points(data):
+        if point.point_date == target:
+            return point
+    return None
+
+
 def _today_consumption(data: PropertyData) -> float | None:
-    """Return today's consumption (litres) from the daily series."""
-    points = _sorted_dated_points(data)
-    if not points:
-        return None
-    return getattr(points[-1], "total_consumption_litres", None)
+    """Return today's consumption (litres) if YW have a reading for today."""
+    point = _point_for_date(data, dt_util.now().date())
+    return getattr(point, "total_consumption_litres", None) if point else None
 
 
 def _yesterday_consumption(data: PropertyData) -> float | None:
-    """Return yesterday's consumption (litres) from the daily series."""
-    points = _sorted_dated_points(data)
-    if len(points) < 2:
-        return None
-    return getattr(points[-2], "total_consumption_litres", None)
+    """Return yesterday's consumption (litres) if YW have a reading for it."""
+    point = _point_for_date(data, dt_util.now().date() - timedelta(days=1))
+    return getattr(point, "total_consumption_litres", None) if point else None
 
 
 def _last_reading_time(data: PropertyData) -> datetime | None:
@@ -118,19 +130,15 @@ def _meter_reference(data: PropertyData) -> str | None:
 
 
 def _today_cost(data: PropertyData) -> float | None:
-    """Return today's full water bill (clean water plus sewerage)."""
-    points = _sorted_dated_points(data)
-    if not points:
-        return None
-    return getattr(points[-1], "total_cost", None)
+    """Return today's full water bill (inc. sewerage) if YW have a reading."""
+    point = _point_for_date(data, dt_util.now().date())
+    return getattr(point, "total_cost", None) if point else None
 
 
 def _yesterday_cost(data: PropertyData) -> float | None:
-    """Return yesterday's full water bill (clean water plus sewerage)."""
-    points = _sorted_dated_points(data)
-    if len(points) < 2:
-        return None
-    return getattr(points[-2], "total_cost", None)
+    """Return yesterday's full water bill (inc. sewerage) if YW have a reading."""
+    point = _point_for_date(data, dt_util.now().date() - timedelta(days=1))
+    return getattr(point, "total_cost", None) if point else None
 
 
 def _live_only(data: PropertyData) -> bool:
