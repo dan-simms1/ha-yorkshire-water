@@ -28,10 +28,40 @@ the slug is `1_example_street_sometown_anywhere_ex1_1ex`.
 
 ## Multiple properties
 
-If you have more than one property on your YW account, the
-integration creates one device per property. Duplicate the **Smart
-Meter** view in the dashboard, paste a second copy, and replace the
-slug in the duplicate with your second property's slug.
+This sample is a **single-property** view. The integration itself is
+fully multi-property: it creates one device per property on your YW
+account, each with its own complete set of entities and its own
+backfilled statistics. The sample just happens to point at one
+property.
+
+To cover a second (or third) property, **duplicate the whole view**,
+not individual cards. In the dashboard's raw configuration, copy the
+entire `- title: Smart Meter ...` view block, paste it as a second
+view, and in the copy replace **two** identifiers:
+
+1. The **entity-id slug** (`1_example_street_sometown_anywhere_ex1_1ex`)
+   everywhere - this keys all the sensor tiles, the binary sensors and
+   the button.
+2. The **16-digit account reference** (`1234567890123456`) in the
+   `yorkshire_water:daily_*` / `yorkshire_water:monthly_*` statistic
+   ids - this keys the daily and monthly bar charts. It is your
+   property's account number with no spaces (Settings -> Devices &
+   Services -> Yorkshire Water -> the property's device).
+
+Then give the copied view its own `title:` (and `path:`) - e.g. the
+property's street name - so the two show up as separate tabs.
+
+### Do labels need the property name?
+
+No. Keep the card labels plain ("Today", "This month", "Meter") and
+scope each property at the **view** level instead - one tab per
+property, titled with the address. Prefixing every tile with the
+address (`1 Example Street Today`, `1 Example Street This month` ...)
+just adds noise: within a property-titled view the context is already
+clear, and each tile's full entity name (shown when you tap it) still
+carries the address. If you want the address visible without tapping,
+add a single `heading` card with the property address at the top of
+each view rather than repeating it on every tile.
 
 ## What you get
 
