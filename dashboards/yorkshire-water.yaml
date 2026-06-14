@@ -42,6 +42,13 @@ views:
     column_span: 3
     cards:
     - type: heading
+      heading: 1 Example Street, Sometown, Anywhere, EX1 1EX
+      heading_style: title
+      icon: mdi:home-water
+  - type: grid
+    column_span: 3
+    cards:
+    - type: heading
       heading: Status
       heading_style: title
       icon: mdi:water-check
