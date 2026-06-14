@@ -11,10 +11,28 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.button import ButtonEntity
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DEVICE_MODEL, DOMAIN, MANUFACTURER
+
+
+def _platform_domain(entity: object) -> str | None:
+    """Return the entity_id platform domain for a YW entity instance.
+
+    Used to suggest an account-based entity_id from the shared base
+    class without each platform passing its own domain in.
+    """
+    if isinstance(entity, BinarySensorEntity):
+        return "binary_sensor"
+    if isinstance(entity, ButtonEntity):
+        return "button"
+    if isinstance(entity, SensorEntity):
+        return "sensor"
+    return None
 
 if TYPE_CHECKING:
     from .coordinator import (
@@ -45,6 +63,20 @@ class YorkshireWaterEntity(CoordinatorEntity["YorkshireWaterCoordinator"]):
         self._account_reference = prop.account_reference
         self._display_account_reference = prop.display_account_reference
         self._attr_unique_id = f"{identifier}_{key}"
+        # Drive the entity_id off the account reference, NOT the device
+        # name. With has_entity_name the auto-generated object_id is
+        # prefixed with the device name (the property address), baking
+        # the home address into every entity_id - and so into logs, the
+        # recorder and diagnostics exports. Setting `entity_id` here is
+        # the supported way to suggest an un-prefixed object_id at
+        # first registration, so new installs get
+        # `<platform>.<account>_<key>` while the device keeps its
+        # human-friendly address name. Existing installs are migrated
+        # to this scheme in __init__.async_setup_entry (the suggestion
+        # is ignored once a registry entry already exists).
+        domain = _platform_domain(self)
+        if domain:
+            self.entity_id = f"{domain}.{identifier}_{key}"
 
         meter_reference = (
             property_data.meter_details.meter_reference

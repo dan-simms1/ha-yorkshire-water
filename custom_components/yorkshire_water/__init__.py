@@ -8,6 +8,7 @@ from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import slugify
 
 from .cache import (
     load_auth_cookies,
@@ -178,6 +179,12 @@ async def async_setup_entry(
     # registers the current set on this setup pass.
     _drop_deprecated_entities(hass, coordinator)
 
+    # One-time migration: rename address-derived entity_ids to the
+    # account-based scheme so the home address is no longer embedded in
+    # entity_ids. Runs before platform setup; the recorder migrates the
+    # long-term statistics automatically when the rename event fires.
+    _migrate_address_entity_ids(hass, entry, coordinator)
+
     # Subscribe to the user's chosen daily refresh schedule. This
     # happens whether the bootstrap succeeded or not - if it failed,
     # the next scheduled clock time is the recovery path.
@@ -224,6 +231,84 @@ _DEPRECATED_SENSOR_KEYS: tuple[str, ...] = (
     "consumption_today",
     "cost_today",
 )
+
+
+_ENTITY_ID_PRIVACY_MIGRATION = "entity_id_privacy_migration_done"
+
+
+def _migrate_address_entity_ids(
+    hass: HomeAssistant,
+    entry: YorkshireWaterConfigEntry,
+    coordinator: YorkshireWaterCoordinator,
+) -> None:
+    """Rename address-derived entity_ids to the account-based scheme.
+
+    Up to v1.x the device was named after the property address and
+    `has_entity_name` prefixed every entity_id with the address slug
+    (`sensor.1_example_street_..._meter_status`), embedding the home
+    address in entity_ids, logs, the recorder and diagnostics exports.
+
+    From v2.0 `suggested_object_id` keys entity_ids on the account
+    reference instead. New installs get that directly; this migration
+    renames the entity_ids of existing installs in the registry.
+
+    Safe and idempotent:
+    - Keyed off the stable `unique_id` (which is already
+      `{account}_{key}`); the target entity_id is `{domain}.{unique_id}`.
+    - Only renames entity_ids that still start with the address slug -
+      i.e. ones HA auto-generated. An entity_id the user has customised
+      to something else is left alone.
+    - The recorder migrates each entity's long-term statistics
+      automatically in response to the registry rename event, so no
+      history is lost.
+
+    Runs once; guarded by a flag in the config entry data. If the
+    coordinator has no snapshot yet (first run never reached the API)
+    the flag is not set, so it retries on a later setup once data
+    exists.
+    """
+    if entry.data.get(_ENTITY_ID_PRIVACY_MIGRATION):
+        return
+    snapshot = coordinator.data
+    if snapshot is None:
+        return  # No property data yet; retry on a future setup.
+
+    ent_reg = er.async_get(hass)
+    for prop_data in snapshot.properties:
+        prop = prop_data.property
+        account = prop.display_account_reference or prop.account_reference
+        address = prop.address.formatted() if prop.address else None
+        if not account or not address:
+            continue
+        address_slug = slugify(address)
+        for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+            uid = reg_entry.unique_id
+            if not uid.startswith(f"{account}_"):
+                continue
+            domain = reg_entry.entity_id.split(".", 1)[0]
+            # Only migrate auto-generated, address-derived entity_ids.
+            # An entity_id the user has customised away from the
+            # address-slug form (or already on the account scheme) is
+            # left untouched.
+            if not reg_entry.entity_id.startswith(f"{domain}.{address_slug}"):
+                continue
+            target = ent_reg.async_get_available_entity_id(
+                domain, uid, current_entity_id=reg_entry.entity_id,
+            )
+            if target != reg_entry.entity_id:
+                LOGGER.info(
+                    "Migrating YW entity_id %s -> %s",
+                    reg_entry.entity_id,
+                    target,
+                )
+                ent_reg.async_update_entity(
+                    reg_entry.entity_id, new_entity_id=target,
+                )
+
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, _ENTITY_ID_PRIVACY_MIGRATION: True},
+    )
 
 
 def _drop_deprecated_entities(

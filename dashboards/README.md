@@ -1,9 +1,9 @@
 # Sample dashboards
 
 `yorkshire-water.yaml` is a starter Lovelace dashboard you can paste
-into Home Assistant. It assumes the entity IDs the integration creates
-by default (one device per property, named after the property's
-address; entity IDs include the address slug).
+into Home Assistant. From v2.0 the entity IDs are keyed on the
+property's account reference (one device per property), e.g.
+`sensor.1234567890123456_consumption_yesterday`.
 
 ## Installing
 
@@ -12,19 +12,26 @@ address; entity IDs include the address slug).
 3. In the new dashboard, three-dot menu → **Edit dashboard** → menu
    again → **Raw configuration editor**.
 4. Paste the contents of `yorkshire-water.yaml`.
-5. **Find-replace the placeholder slug**
-   `1_example_street_sometown_anywhere_ex1_1ex` with your
-   own property's slug.
+5. **Find-replace the placeholder account number**
+   `1234567890123456` with your own property's account reference.
 
-## Finding your property's slug
+## Finding your property's account reference
 
 Settings → Devices & Services → Yorkshire Water → click your property
 device → click any entity, e.g. *Consumption yesterday*. The entity
-shows as `sensor.<slug>_consumption_yesterday`; copy the `<slug>` part.
+shows as `sensor.<account>_consumption_yesterday`; copy the `<account>`
+part.
 
-The slug is derived from the property's address. For an account
-registered to *1 Example Street, Sometown, Anywhere, EX1 1EX*
-the slug is `1_example_street_sometown_anywhere_ex1_1ex`.
+This is your 16-digit Yorkshire Water account number with no spaces
+(the same number that keys the daily/monthly statistic ids). Entity
+IDs are deliberately keyed on this rather than the address so the home
+address is not embedded in entity IDs, logs or diagnostics exports.
+
+(Upgrading from v1.x? Entity IDs were renamed from the address-slug
+form to this account-based form automatically; the recorder kept your
+history. Any automations or dashboards that referenced the old
+`sensor.<address>_...` ids need updating to the new `sensor.<account>_...`
+ids.)
 
 ## Multiple properties
 
@@ -37,16 +44,11 @@ property.
 To cover a second (or third) property, **duplicate the whole view**,
 not individual cards. In the dashboard's raw configuration, copy the
 entire `- title: Smart Meter ...` view block, paste it as a second
-view, and in the copy replace **two** identifiers:
-
-1. The **entity-id slug** (`1_example_street_sometown_anywhere_ex1_1ex`)
-   everywhere - this keys all the sensor tiles, the binary sensors and
-   the button.
-2. The **16-digit account reference** (`1234567890123456`) in the
-   `yorkshire_water:daily_*` / `yorkshire_water:monthly_*` statistic
-   ids - this keys the daily and monthly bar charts. It is your
-   property's account number with no spaces (Settings -> Devices &
-   Services -> Yorkshire Water -> the property's device).
+view, and find-replace the placeholder account number
+`1234567890123456` with the second property's account reference. From
+v2.0 that single number keys everything - the sensor tiles, the binary
+sensors, the button, and the daily/monthly statistic ids - so there is
+just the one identifier to swap.
 
 Then give the copied view its own `title:` (and `path:`) - e.g. the
 property's street name - so the two show up as separate tabs.
@@ -94,10 +96,10 @@ poll, including months from before the integration was installed, with
 no waiting for history to accrue.
 
 The `<display_account_reference>` is your property's 16-digit account
-number with no spaces. Find it under Settings -> Devices & Services ->
-Yorkshire Water -> your property device (it is also the basis of the
-entity-id slug). The sample uses the placeholder
-`1234567890123456`; replace it with yours.
+number with no spaces - the same value that keys the entity ids. Find
+it under Settings -> Devices & Services -> Yorkshire Water -> your
+property device. The sample uses the placeholder `1234567890123456`;
+replace it with yours.
 
 ## "No reading" instead of "Unavailable"
 
@@ -113,7 +115,7 @@ frontend `mushroom` add-on and replace each tile card with a
 
 ```yaml
 type: custom:mushroom-template-card
-entity: sensor.<slug>_consumption_yesterday
+entity: sensor.<account>_consumption_yesterday
 primary: Yesterday
 secondary: >-
   {% set s = states(config.entity) %}

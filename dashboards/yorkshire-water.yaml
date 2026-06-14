@@ -43,8 +43,8 @@ views:
     cards:
     - type: markdown
       text_only: true
-      content: '## {{ state_attr(''sensor.1_example_street_sometown_anywhere_ex1_1ex_meter_status'', ''address'')
-        or ''Yorkshire Water'' }}'
+      content: '## {{ state_attr(''sensor.1234567890123456_meter_status'', ''address'') or ''Yorkshire
+        Water'' }}'
   - type: grid
     column_span: 3
     cards:
@@ -53,21 +53,21 @@ views:
       heading_style: title
       icon: mdi:water-check
     - type: tile
-      entity: binary_sensor.1_example_street_sometown_anywhere_ex1_1ex_meter_active
+      entity: binary_sensor.1234567890123456_meter_active
       name: Meter
       color: blue
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: binary_sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_alarm
+      entity: binary_sensor.1234567890123456_continuous_flow_alarm
       name: Leak alert
       color: red
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_last_reading_time
+      entity: sensor.1234567890123456_last_reading_time
       name: Last reading
       color: grey
       vertical: true
@@ -81,21 +81,21 @@ views:
       heading_style: title
       icon: mdi:water
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_yesterday
+      entity: sensor.1234567890123456_consumption_yesterday
       name: Yesterday
       color: blue
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_recent_consumption
+      entity: sensor.1234567890123456_window_consumption
       name: Last 8 days
       color: blue
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_consumption
+      entity: sensor.1234567890123456_cumulative_consumption
       name: Total tracked
       color: blue
       vertical: true
@@ -109,14 +109,14 @@ views:
       heading_style: title
       icon: mdi:currency-gbp
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cost_yesterday
+      entity: sensor.1234567890123456_cost_yesterday
       name: Yesterday
       color: green
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_cost
+      entity: sensor.1234567890123456_cumulative_cost
       name: Total tracked
       color: green
       vertical: true
@@ -130,28 +130,28 @@ views:
       heading_style: title
       icon: mdi:calendar-month
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_this_month
+      entity: sensor.1234567890123456_consumption_this_month
       name: This month
       color: blue
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_last_month
+      entity: sensor.1234567890123456_consumption_last_month
       name: Last month
       color: blue
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_total_cost_this_month
+      entity: sensor.1234567890123456_cost_this_month_total
       name: Cost this month
       color: green
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_total_cost_last_month
+      entity: sensor.1234567890123456_cost_last_month_total
       name: Cost last month
       color: green
       vertical: true
@@ -165,28 +165,28 @@ views:
       heading_style: title
       icon: mdi:calendar-clock
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_consumption_year_to_date
+      entity: sensor.1234567890123456_consumption_year_to_date
       name: Consumption YTD
       color: blue
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_cost_year_to_date
+      entity: sensor.1234567890123456_cost_year_to_date
       name: Cost YTD
       color: green
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_average_monthly_consumption
+      entity: sensor.1234567890123456_average_monthly_consumption
       name: Avg monthly use
       color: blue
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_average_monthly_cost
+      entity: sensor.1234567890123456_average_monthly_cost
       name: Avg monthly cost
       color: green
       vertical: true
@@ -244,15 +244,15 @@ views:
       icon: mdi:wrench
     - type: entities
       entities:
-      - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_meter_reference
+      - entity: sensor.1234567890123456_meter_reference
         name: Meter reference
-      - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_last_reading_time
+      - entity: sensor.1234567890123456_last_reading_time
         name: Last YW reading date
-      - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_last_update_time
+      - entity: sensor.1234567890123456_last_update_time
         name: Last update time
-      - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_rate
+      - entity: sensor.1234567890123456_continuous_flow_rate
         name: Continuous flow rate
-      - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_cost_per_day
+      - entity: sensor.1234567890123456_continuous_flow_cost_per_day
         name: Continuous flow cost/day
       show_header_toggle: false
 

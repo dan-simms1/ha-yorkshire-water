@@ -36,13 +36,13 @@ async def test_alarm_off_when_no_active_alarm(
     await hass.async_block_till_done()
 
     state = hass.states.get(
-        "binary_sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_alarm",
+        "binary_sensor.1234567890123456_continuous_flow_alarm",
     )
     assert state is not None
     assert state.state == STATE_OFF
 
     meter_active = hass.states.get(
-        "binary_sensor.1_example_street_sometown_anywhere_ex1_1ex_meter_active",
+        "binary_sensor.1234567890123456_meter_active",
     )
     assert meter_active is not None
     assert meter_active.state == STATE_ON
@@ -62,7 +62,7 @@ async def test_alarm_on_when_alarm_state_true(hass: HomeAssistant) -> None:
         await hass.async_block_till_done()
 
     state = hass.states.get(
-        "binary_sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_alarm",
+        "binary_sensor.1234567890123456_continuous_flow_alarm",
     )
     assert state is not None
     assert state.state == STATE_ON
