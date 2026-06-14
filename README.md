@@ -1,4 +1,8 @@
-# Yorkshire Water for Home Assistant
+<p align="center">
+  <img src="custom_components/yorkshire_water/brand/logo.png" alt="Yorkshire Water" width="128">
+</p>
+
+<h1 align="center">Yorkshire Water for Home Assistant</h1>
 
 A Home Assistant integration that surfaces smart meter consumption data from
 `my.yorkshirewater.com`.
