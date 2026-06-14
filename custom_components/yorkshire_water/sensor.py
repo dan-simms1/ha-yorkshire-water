@@ -527,6 +527,28 @@ class YorkshireWaterMeterStatusSensor(YorkshireWaterEntity, SensorEntity):
             return None
         return snapshot.meter_status.value
 
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose the property address and account reference.
+
+        The meter-status sensor is always available and there is one
+        per property, so it is the natural carrier for property-level
+        metadata. Dashboards read the `address` attribute to render a
+        per-property heading without hard-coding the address.
+        """
+        snapshot = self.property_data()
+        if snapshot is None or snapshot.property is None:
+            return {}
+        attrs: dict[str, Any] = {}
+        address = snapshot.property.address
+        if address is not None:
+            formatted = address.formatted()
+            if formatted:
+                attrs["address"] = formatted
+        if snapshot.property.display_account_reference:
+            attrs["account_reference"] = snapshot.property.display_account_reference
+        return attrs
+
 
 class YorkshireWaterSensor(YorkshireWaterEntity, SensorEntity):
     """Generic sensor backed by a SensorEntityDescription with a value_fn."""

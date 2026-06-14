@@ -60,6 +60,12 @@ async def test_sensors_when_meter_live(
     assert cumulative.attributes["device_class"] == "water"
     assert cumulative.attributes["state_class"] == "total_increasing"
 
+    # Meter status carries the property address as an attribute so the
+    # dashboard can render a per-property heading without hard-coding it.
+    meter_status = hass.states.get(f"sensor.{PROPERTY_SLUG}_meter_status")
+    assert meter_status is not None
+    assert "Example Street" in meter_status.attributes.get("address", "")
+
 
 async def test_cumulative_sensor_is_monotonic(
     hass: HomeAssistant,

@@ -41,10 +41,10 @@ views:
   - type: grid
     column_span: 3
     cards:
-    - type: heading
-      heading: 1 Example Street, Sometown, Anywhere, EX1 1EX
-      heading_style: title
-      icon: mdi:home-water
+    - type: markdown
+      text_only: true
+      content: '## {{ state_attr(''sensor.1_example_street_sometown_anywhere_ex1_1ex_meter_status'', ''address'')
+        or ''Yorkshire Water'' }}'
   - type: grid
     column_span: 3
     cards:
