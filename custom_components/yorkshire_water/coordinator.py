@@ -84,7 +84,7 @@ from .const import (
     MIN_HEARTBEAT_MINUTES,
     MIN_REFRESHES_PER_DAY,
 )
-from .statistics import async_import_monthly_statistics
+from .statistics import async_import_property_statistics
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -98,6 +98,11 @@ if TYPE_CHECKING:
 # uniform random 0-300 seconds so the actual request hits between the
 # nominal time and nominal+5min.
 _SCHEDULE_JITTER_SECONDS = 300
+
+# How many days of daily-consumption history to fetch each refresh.
+# Wide enough to populate a 30-day daily bar chart from the backfilled
+# daily statistics, with a few days of headroom for YW's pipeline lag.
+_DAILY_FETCH_DAYS = 35
 
 
 @dataclass(slots=True)
@@ -557,16 +562,18 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         except Exception:
             LOGGER.exception("Failed to persist YW snapshot to cache")
 
-        # Backfill monthly totals into long-term statistics so the
-        # monthly bar chart shows real history (including months from
-        # before the integration was installed). Isolated so a recorder
-        # import failure can never fail the data refresh.
+        # Backfill daily + monthly totals into long-term statistics so
+        # the bar charts show real history (including periods from
+        # before the integration was installed) without the artefacts
+        # of charting the cumulative sensor's per-period change.
+        # Isolated so a recorder import failure can never fail the
+        # data refresh.
         for prop_data in property_snapshots:
             try:
-                async_import_monthly_statistics(self.hass, prop_data)
+                async_import_property_statistics(self.hass, prop_data)
             except Exception:
                 LOGGER.exception(
-                    "Failed to import YW monthly statistics for %s",
+                    "Failed to import YW statistics for %s",
                     prop_data.property.display_account_reference,
                 )
 
@@ -631,7 +638,11 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
                 # account_reference scope.
                 if details.start_date is not None:
                     end = datetime.now().date()
-                    start = end - timedelta(days=8)
+                    # Fetch a ~5-week window so the daily statistics
+                    # backfill has enough history to fill a 30-day bar
+                    # chart. The "Consumption (last 8 days)" sensor
+                    # filters this list back down to 8 days itself.
+                    start = end - timedelta(days=_DAILY_FETCH_DAYS)
                     daily = await client.get_daily_consumption(
                         start_date=start.isoformat(),
                         end_date=end.isoformat(),

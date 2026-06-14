@@ -55,15 +55,24 @@ def _sorted_dated_points(data: PropertyData) -> list[Any]:
     )
 
 
+# How many trailing days the "last 8 days" sensor covers. The
+# coordinator now fetches a wider daily window (~35 days) to feed the
+# daily statistics backfill, so this sensor filters back down to its
+# own window rather than summing whatever was fetched.
+_WINDOW_DAYS = 8
+
+
 def _window_sum(data: PropertyData) -> float | None:
-    """Return the sum of the daily window, in litres."""
+    """Return total consumption over the last `_WINDOW_DAYS` days, in litres."""
     if not data.daily_points:
         return None
+    cutoff = dt_util.now().date() - timedelta(days=_WINDOW_DAYS)
     total = 0.0
     found = False
     for point in data.daily_points:
+        point_date = getattr(point, "point_date", None)
         litres = getattr(point, "total_consumption_litres", None)
-        if litres is None:
+        if point_date is None or point_date <= cutoff or litres is None:
             continue
         total += float(litres)
         found = True

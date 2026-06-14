@@ -213,20 +213,20 @@ views:
     - type: statistics-graph
       title: Daily consumption
       entities:
-      - sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_consumption
+      - yorkshire_water:daily_consumption_1234567890123456
       period: day
       stat_types:
-      - change
-      chart_type: line
+      - state
+      chart_type: bar
       days_to_show: 30
     - type: statistics-graph
       title: Daily cost
       entities:
-      - sensor.1_example_street_sometown_anywhere_ex1_1ex_cumulative_cost
+      - yorkshire_water:daily_cost_1234567890123456
       period: day
       stat_types:
-      - change
-      chart_type: line
+      - state
+      chart_type: bar
       days_to_show: 30
   - type: grid
     column_span: 3
