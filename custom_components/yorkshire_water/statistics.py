@@ -30,7 +30,7 @@ from __future__ import annotations
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.components.recorder.statistics import async_import_statistics
+from homeassistant.components.recorder.statistics import async_add_external_statistics
 from homeassistant.const import UnitOfVolume
 from homeassistant.util import dt as dt_util
 
@@ -64,12 +64,18 @@ def _metadata(statistic_id: str, name: str, unit: str) -> dict[str, Any]:
 
     Typed as a plain dict so the optional `mean_type` key can be
     omitted on older HA cores without tripping the TypedDict.
+
+    `unit_class` is set to None deliberately: it is present (so newer
+    cores do not warn about its absence) but None skips the recorder's
+    unit-conversion validation, which would otherwise reject "GBP" and
+    is unnecessary for a standalone monthly bar chart.
     """
     meta: dict[str, Any] = {
         "source": DOMAIN,
         "statistic_id": statistic_id,
         "name": name,
         "unit_of_measurement": unit,
+        "unit_class": None,
         "has_mean": False,
         "has_sum": True,
     }
@@ -129,7 +135,7 @@ def async_import_monthly_statistics(
             )
 
     if consumption_stats:
-        async_import_statistics(
+        async_add_external_statistics(
             hass,
             _metadata(
                 consumption_id,
@@ -139,7 +145,7 @@ def async_import_monthly_statistics(
             consumption_stats,
         )
     if cost_stats:
-        async_import_statistics(
+        async_add_external_statistics(
             hass,
             _metadata(cost_id, "Yorkshire Water monthly cost", _COST_UNIT),
             cost_stats,
