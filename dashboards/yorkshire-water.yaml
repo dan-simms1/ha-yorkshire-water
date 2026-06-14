@@ -237,10 +237,15 @@ views:
       icon: mdi:wrench
     - type: entities
       entities:
-      - sensor.1_example_street_sometown_anywhere_ex1_1ex_meter_reference
-      - sensor.1_example_street_sometown_anywhere_ex1_1ex_last_reading_time
-      - sensor.1_example_street_sometown_anywhere_ex1_1ex_last_update_time
-      - sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_rate
-      - sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_cost_per_day
+      - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_meter_reference
+        name: Meter reference
+      - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_last_reading_time
+        name: Last YW reading date
+      - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_last_update_time
+        name: Last update time
+      - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_rate
+        name: Continuous flow rate
+      - entity: sensor.1_example_street_sometown_anywhere_ex1_1ex_continuous_flow_cost_per_day
+        name: Continuous flow cost/day
       show_header_toggle: false
 
