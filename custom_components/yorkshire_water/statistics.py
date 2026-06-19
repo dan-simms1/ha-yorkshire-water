@@ -68,6 +68,15 @@ def _ledger_store(hass: HomeAssistant, entry_id: str) -> Store[dict[str, Any]]:
     return Store(hass, _LEDGER_VERSION, f"{DOMAIN}.{entry_id}.stat_ledger")
 
 
+async def async_remove_statistics_ledger(hass: HomeAssistant, entry_id: str) -> None:
+    """Drop the persisted statistics ledger when an entry is removed.
+
+    Holds the account reference and dated consumption/cost history, so
+    it must not linger after the user deletes the integration.
+    """
+    await _ledger_store(hass, entry_id).async_remove()
+
+
 def _day_start(value: date) -> Any:
     return dt_util.as_utc(dt_util.start_of_local_day(value))
 
@@ -117,21 +126,39 @@ def _emit(
     return len(stats)
 
 
+def _merge(section: dict[str, Any], key: str, litres: float, cost: float | None) -> None:
+    """Upsert one (litres, cost) bucket, preserving a prior non-null cost.
+
+    A re-read that has litres but a null cost must not wipe a cost we
+    already recorded for that period, otherwise the cost series would
+    lose the day. Litres are always taken from the fresh read (we never
+    reach here with null litres).
+    """
+    prior = section.get(key)
+    if cost is None and isinstance(prior, list) and len(prior) > 1 and prior[1] is not None:
+        cost = prior[1]
+    section[key] = [litres, cost]
+
+
 def _merge_daily(acct: dict[str, Any], property_data: PropertyData) -> None:
-    """Fold the fetched daily window into the persisted daily ledger."""
+    """Fold the fetched daily window into the persisted daily ledger.
+
+    A day that comes back flagged missing or with null litres is left
+    as-is in the ledger: a transmission gap is not evidence of zero
+    consumption, so the last real value is kept (last-known-good).
+    """
     daily = acct.setdefault("daily", {})
     for point in property_data.daily_points:
         if point.point_date is None or getattr(point, "is_missing", False):
             continue
         if point.total_consumption_litres is None:
             continue
-        litres = float(point.total_consumption_litres)
         cost = (
             float(point.total_cost_including_sewerage)
             if point.total_cost_including_sewerage is not None
             else None
         )
-        daily[point.point_date.isoformat()] = [litres, cost]
+        _merge(daily, point.point_date.isoformat(), float(point.total_consumption_litres), cost)
 
 
 def _merge_monthly(acct: dict[str, Any], property_data: PropertyData) -> None:
@@ -143,16 +170,18 @@ def _merge_monthly(acct: dict[str, Any], property_data: PropertyData) -> None:
     for period in yearly.monthly_consumption:
         if not period.month or not period.month.isdigit():
             continue
+        month = int(period.month)
+        if not 1 <= month <= 12:
+            continue
         if period.total_consumption_litres is None:
             continue
-        key = date(yearly.year, int(period.month), 1).isoformat()
-        litres = float(period.total_consumption_litres)
+        key = date(yearly.year, month, 1).isoformat()
         cost = (
             float(period.total_cost_including_sewerage)
             if period.total_cost_including_sewerage is not None
             else None
         )
-        monthly[key] = [litres, cost]
+        _merge(monthly, key, float(period.total_consumption_litres), cost)
 
 
 def _series(ledger_section: dict[str, list[Any]], index: int) -> list[tuple[Any, float]]:
@@ -163,10 +192,15 @@ def _series(ledger_section: dict[str, list[Any]], index: int) -> list[tuple[Any,
     """
     out: list[tuple[Any, float]] = []
     for iso, values in sorted(ledger_section.items()):
+        if not isinstance(values, list):
+            continue
         value = values[index] if index < len(values) else None
         if value is None:
             continue
-        out.append((_day_start(date.fromisoformat(iso)), float(value)))
+        try:
+            out.append((_day_start(date.fromisoformat(iso)), float(value)))
+        except (ValueError, TypeError):
+            continue
     return out
 
 
@@ -185,8 +219,15 @@ async def async_import_property_statistics(
         return
 
     store = _ledger_store(hass, entry_id)
-    ledger: dict[str, Any] = await store.async_load() or {}
-    acct = ledger.setdefault(ref, {"daily": {}, "monthly": {}})
+    raw = await store.async_load()
+    ledger: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    acct = ledger.get(ref)
+    if not isinstance(acct, dict):
+        acct = ledger[ref] = {"daily": {}, "monthly": {}}
+    if not isinstance(acct.get("daily"), dict):
+        acct["daily"] = {}
+    if not isinstance(acct.get("monthly"), dict):
+        acct["monthly"] = {}
 
     _merge_daily(acct, property_data)
     _merge_monthly(acct, property_data)

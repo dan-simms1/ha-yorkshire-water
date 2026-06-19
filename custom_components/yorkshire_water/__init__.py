@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from homeassistant.components.recorder import get_instance
 from homeassistant.const import Platform
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
@@ -28,6 +29,7 @@ from .const import (
     LOGGER,
 )
 from .coordinator import YorkshireWaterCoordinator, YorkshireWaterData
+from .statistics import async_remove_statistics_ledger
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -185,6 +187,12 @@ async def async_setup_entry(
     # long-term statistics automatically when the rename event fires.
     _migrate_address_entity_ids(hass, entry, coordinator)
 
+    # One-time cleanup: purge the long-term statistics orphaned by the
+    # v3.0.0 statistics-first redesign (dropped sensors, plus summaries
+    # that lost their state_class). Runs after the privacy migration so
+    # any account-scheme rename has already settled.
+    _clear_deprecated_statistics(hass, entry, coordinator)
+
     # Subscribe to the user's chosen daily refresh schedule. This
     # happens whether the bootstrap succeeded or not - if it failed,
     # the next scheduled clock time is the recovery path.
@@ -248,7 +256,27 @@ _DEPRECATED_SENSOR_KEYS: tuple[str, ...] = (
 )
 
 
+# Keys of sensors that survive into v3.0.0 but had their `state_class`
+# removed (the month-to-date and year-to-date summaries). With the
+# statistics-first redesign their dated history lives in the external
+# statistics instead, so the live state_class was dropped. HA keeps any
+# long-term statistics those sensors recorded under their old
+# state_class, then raises a "no longer has a state class" repair and
+# leaves the rows orphaned. We clear that stale history once on upgrade.
+# `continuous_flow_rate` is deliberately absent: it keeps its
+# MEASUREMENT state_class, so its statistics stay valid.
+_STAT_CLASS_REMOVED_KEYS: tuple[str, ...] = (
+    "consumption_this_month",
+    "cost_this_month_clean_water",
+    "cost_this_month_sewerage",
+    "cost_this_month_total",
+    "consumption_year_to_date",
+    "cost_year_to_date",
+)
+
+
 _ENTITY_ID_PRIVACY_MIGRATION = "entity_id_privacy_migration_done"
+_STATS_CLEANUP_V3 = "stats_cleanup_v3_done"
 
 
 def _migrate_address_entity_ids(
@@ -353,6 +381,79 @@ def _drop_deprecated_entities(
                 ent_reg.async_remove(entity_id)
 
 
+def _clear_deprecated_statistics(
+    hass: HomeAssistant,
+    entry: YorkshireWaterConfigEntry,
+    coordinator: YorkshireWaterCoordinator,
+) -> None:
+    """Purge orphaned long-term statistics left by the v3.0.0 redesign.
+
+    Two groups of sensors leave stale recorder statistics behind on an
+    upgrade to v3.0.0:
+
+    - sensors dropped entirely (`_DEPRECATED_SENSOR_KEYS`), whose
+      entities `_drop_deprecated_entities` has just removed;
+    - summaries that survive but lost their `state_class`
+      (`_STAT_CLASS_REMOVED_KEYS`).
+
+    Either way HA raises a "no longer has a state class" repair and
+    keeps the old rows. Clearing them removes the repair and the dead
+    history. New installs never recorded these, so the clear is a
+    harmless no-op there.
+
+    Statistics are keyed on the entity_id, which differs across upgrade
+    paths: an install already on the v2.0 account scheme recorded under
+    `sensor.<account>_<key>`, while a v1.x install that jumps straight to
+    v3 recorded the dropped sensors under the old address slug (they are
+    removed before the privacy migration can rename them). We clear both
+    candidate ids; a clear of a non-existent statistic is a no-op.
+
+    Runs once, guarded by a flag in the entry data. Requires a snapshot
+    so the property references are known; retries on a later setup if
+    none exists yet. Quietly skips when the recorder is disabled (no
+    statistics can exist in that case).
+    """
+    if entry.data.get(_STATS_CLEANUP_V3):
+        return
+    snapshot = coordinator.data
+    if snapshot is None:
+        return  # No property data yet; retry on a future setup.
+
+    try:
+        recorder = get_instance(hass)
+    except KeyError:
+        # Recorder not configured: there are no statistics to clear.
+        # Mark done so we do not keep re-checking on every setup.
+        hass.config_entries.async_update_entry(
+            entry,
+            data={**entry.data, _STATS_CLEANUP_V3: True},
+        )
+        return
+
+    keys = (*_DEPRECATED_SENSOR_KEYS, *_STAT_CLASS_REMOVED_KEYS)
+    statistic_ids: list[str] = []
+    for prop_data in snapshot.properties:
+        prop = prop_data.property
+        account = prop.display_account_reference or prop.account_reference
+        slugs = {account} if account else set()
+        if prop.address:
+            slugs.add(slugify(prop.address.formatted()))
+        for slug in slugs:
+            statistic_ids.extend(f"sensor.{slug}_{key}" for key in keys)
+
+    if statistic_ids:
+        LOGGER.info(
+            "Clearing %d orphaned YW statistic series after v3.0.0 upgrade",
+            len(statistic_ids),
+        )
+        recorder.async_clear_statistics(statistic_ids)
+
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, _STATS_CLEANUP_V3: True},
+    )
+
+
 def _format_account_number(raw: str) -> str:
     """Format the 16-digit YW account number with thousands-style spacing.
 
@@ -392,9 +493,10 @@ async def async_remove_entry(
     hass: HomeAssistant,
     entry: YorkshireWaterConfigEntry,
 ) -> None:
-    """Drop cached snapshot and IdP cookies when the user removes the integration."""
+    """Drop cached snapshot, IdP cookies and the statistics ledger on removal."""
     await remove_snapshot(hass, entry.entry_id)
     await remove_auth_cookies(hass, entry.entry_id)
+    await async_remove_statistics_ledger(hass, entry.entry_id)
 
 
 async def _async_update_listener(

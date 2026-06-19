@@ -410,10 +410,15 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         # outside the loop.
         http_client = get_async_client(self.hass)
 
+        # The auth lock only guards the cookie jar + its rotation; the
+        # long-term-statistics import (its own Store, no shared cookie
+        # state) runs AFTER the lock releases so it never blocks a
+        # heartbeat or a concurrent manual refresh.
         async with self._auth_lock:
+            snapshot: YorkshireWaterCoordinatorData | None = None
             if self._cookies:
                 try:
-                    return await self._fetch_all(
+                    snapshot = await self._fetch_all(
                         http_client,
                         self._cookies,
                         source="stored cookies (silent renewal)",
@@ -434,44 +439,70 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
                             "Failed to drop expired YW auth cookies from cache",
                         )
 
-            try:
-                bridge_cookies = await bridge_login(
-                    self._bridge_url,
-                    self._email,
-                    self._password,
-                    http_client=http_client,
-                )
-            except BridgeUnreachableError as err:
-                # The stealth-browser add-on is not running / not
-                # reachable. ConfigEntryNotReady so HA retries setup
-                # on its own backoff schedule once the add-on comes
-                # back.
-                raise ConfigEntryNotReady(str(err)) from err
-            except BridgeLoginError as err:
-                # Treat as a transient failure rather than triggering
-                # reauth. Most causes of "login failed" here are
-                # transient: reCAPTCHA score cooldown after repeated
-                # attempts, YW serving a v2 image challenge, momentary
-                # form-render glitches, network blips. The user's
-                # credentials are almost certainly still correct, and
-                # surfacing reauth on every transient failure is wrong.
-                raise UpdateFailed(
-                    f"YW login failed (will retry): {err}",
-                ) from err
+            if snapshot is None:
+                try:
+                    bridge_cookies = await bridge_login(
+                        self._bridge_url,
+                        self._email,
+                        self._password,
+                        http_client=http_client,
+                    )
+                except BridgeUnreachableError as err:
+                    # The stealth-browser add-on is not running / not
+                    # reachable. ConfigEntryNotReady so HA retries setup
+                    # on its own backoff schedule once the add-on comes
+                    # back.
+                    raise ConfigEntryNotReady(str(err)) from err
+                except BridgeLoginError as err:
+                    # Treat as a transient failure rather than triggering
+                    # reauth. Most causes of "login failed" here are
+                    # transient: reCAPTCHA score cooldown after repeated
+                    # attempts, YW serving a v2 image challenge, momentary
+                    # form-render glitches, network blips. The user's
+                    # credentials are almost certainly still correct, and
+                    # surfacing reauth on every transient failure is wrong.
+                    raise UpdateFailed(
+                        f"YW login failed (will retry): {err}",
+                    ) from err
 
+                try:
+                    snapshot = await self._fetch_all(
+                        http_client,
+                        bridge_cookies,
+                        source="fresh browser-bridge login",
+                    )
+                except CookieSessionExpiredError as err:
+                    # Cookies we just harvested were rejected by the API
+                    # before we could even use them. YW backend race or
+                    # transient, not a credentials issue.
+                    raise UpdateFailed(
+                        f"Cookies expired immediately: {err}",
+                    ) from err
+
+        # Outside the auth lock: backfill long-term statistics.
+        await self._import_statistics(snapshot)
+        return snapshot
+
+    async def _import_statistics(
+        self,
+        snapshot: YorkshireWaterCoordinatorData,
+    ) -> None:
+        """Backfill daily + monthly statistics for every property.
+
+        Isolated per property so a recorder/storage failure can never
+        fail the data refresh, and run outside the auth lock so it never
+        blocks a heartbeat or manual refresh.
+        """
+        for prop_data in snapshot.properties:
             try:
-                return await self._fetch_all(
-                    http_client,
-                    bridge_cookies,
-                    source="fresh browser-bridge login",
+                await async_import_property_statistics(
+                    self.hass, self.entry.entry_id, prop_data,
                 )
-            except CookieSessionExpiredError as err:
-                # Cookies we just harvested were rejected by the API
-                # before we could even use them. YW backend race or
-                # transient, not a credentials issue.
-                raise UpdateFailed(
-                    f"Cookies expired immediately: {err}",
-                ) from err
+            except Exception:
+                LOGGER.exception(
+                    "Failed to import YW statistics for %s",
+                    prop_data.property.display_account_reference,
+                )
 
     async def _fetch_all(
         self,
@@ -562,23 +593,8 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         except Exception:
             LOGGER.exception("Failed to persist YW snapshot to cache")
 
-        # Backfill daily + monthly totals into long-term statistics so
-        # the bar charts show real history (including periods from
-        # before the integration was installed) without the artefacts
-        # of charting the cumulative sensor's per-period change.
-        # Isolated so a recorder import failure can never fail the
-        # data refresh.
-        for prop_data in property_snapshots:
-            try:
-                await async_import_property_statistics(
-                    self.hass, self.entry.entry_id, prop_data,
-                )
-            except Exception:
-                LOGGER.exception(
-                    "Failed to import YW statistics for %s",
-                    prop_data.property.display_account_reference,
-                )
-
+        # Statistics backfill happens in `_async_update_data` after the
+        # auth lock is released (see `_import_statistics`).
         LOGGER.debug("YW refresh succeeded via %s", source)
         return snapshot
 

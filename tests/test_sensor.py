@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import slugify
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.yorkshire_water.const import DOMAIN
 
-from .conftest import SAMPLE_CREDENTIALS
+from .conftest import SAMPLE_CREDENTIALS, _property
 
 # Account-based entity_id slug used from v2.0 (the fixture's
 # display_account_reference). Pre-v2.0 the slug was the address.
@@ -53,7 +55,9 @@ async def test_sensors_when_meter_live(
         "cumulative_consumption",
         "cumulative_cost",
         "consumption_last_month",
+        "cost_last_month_total",
         "average_monthly_consumption",
+        "average_monthly_cost",
     ):
         assert hass.states.get(f"sensor.{PROPERTY_SLUG}_{gone}") is None
 
@@ -131,3 +135,103 @@ async def test_legacy_address_entity_ids_are_migrated(
     assert (
         hass.states.get(f"sensor.{_LEGACY_ADDRESS_SLUG}_meter_reference") is None
     )
+
+
+async def test_latest_daily_skips_trailing_missing_day(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """latest_daily_consumption reflects the freshest REAL reading, not a
+    trailing missing/null placeholder day."""
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+    from pyyorkshirewater import DailyConsumptionPoint
+
+    today = dt_util.now().date()
+    real_day = today - timedelta(days=2)
+    mock_client_live.get_daily_consumption.return_value = [
+        DailyConsumptionPoint.from_api(
+            {"date": real_day.isoformat(), "totalConsumptionLitres": 123.0,
+             "totalCostIncludingSewerage": 0.44},
+        ),
+        DailyConsumptionPoint.from_api(
+            {"date": (today - timedelta(days=1)).isoformat(),
+             "isMissingConsumption": True},
+        ),
+    ]
+
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    latest = hass.states.get(f"sensor.{PROPERTY_SLUG}_latest_daily_consumption")
+    assert latest is not None
+    assert float(latest.state) == pytest.approx(123.0)
+    assert latest.attributes["reading_date"] == real_day.isoformat()
+
+
+async def test_clear_deprecated_statistics_purges_orphans(
+    hass: HomeAssistant,
+) -> None:
+    """v3.0.0 upgrade clears stats for dropped + state-class-stripped sensors.
+
+    The orphaned series are keyed under both the account slug and the
+    old address slug (a v1.x install recorded under the address before
+    the privacy migration could rename it), and the cleanup runs once.
+    """
+    from custom_components.yorkshire_water import (
+        _STAT_CLASS_REMOVED_KEYS,
+        _STATS_CLEANUP_V3,
+        _clear_deprecated_statistics,
+    )
+
+    entry = _entry(hass)
+    prop = _property()
+    coordinator = SimpleNamespace(
+        data=SimpleNamespace(properties=[SimpleNamespace(property=prop)]),
+    )
+    address_slug = slugify(prop.address.formatted())
+    recorder = MagicMock()
+
+    with patch(
+        "custom_components.yorkshire_water.get_instance", return_value=recorder,
+    ):
+        _clear_deprecated_statistics(hass, entry, coordinator)
+
+    recorder.async_clear_statistics.assert_called_once()
+    cleared = set(recorder.async_clear_statistics.call_args.args[0])
+    # A dropped sensor and a state-class-stripped summary, under both the
+    # account slug and the legacy address slug.
+    assert f"sensor.{PROPERTY_SLUG}_cumulative_consumption" in cleared
+    assert f"sensor.{address_slug}_cumulative_consumption" in cleared
+    for key in _STAT_CLASS_REMOVED_KEYS:
+        assert f"sensor.{PROPERTY_SLUG}_{key}" in cleared
+    # The flag is set, so a second pass is a no-op.
+    assert entry.data.get(_STATS_CLEANUP_V3) is True
+    recorder.reset_mock()
+    with patch(
+        "custom_components.yorkshire_water.get_instance", return_value=recorder,
+    ):
+        _clear_deprecated_statistics(hass, entry, coordinator)
+    recorder.async_clear_statistics.assert_not_called()
+
+
+async def test_clear_deprecated_statistics_keeps_flow_rate(
+    hass: HomeAssistant,
+) -> None:
+    """continuous_flow_rate keeps its state_class, so its stats are spared."""
+    from custom_components.yorkshire_water import _clear_deprecated_statistics
+
+    entry = _entry(hass)
+    coordinator = SimpleNamespace(
+        data=SimpleNamespace(properties=[SimpleNamespace(property=_property())]),
+    )
+    recorder = MagicMock()
+    with patch(
+        "custom_components.yorkshire_water.get_instance", return_value=recorder,
+    ):
+        _clear_deprecated_statistics(hass, entry, coordinator)
+
+    cleared = set(recorder.async_clear_statistics.call_args.args[0])
+    assert not any("continuous_flow_rate" in sid for sid in cleared)

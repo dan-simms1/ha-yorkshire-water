@@ -25,6 +25,7 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
     SensorEntityDescription,
+    SensorStateClass,
 )
 from homeassistant.const import EntityCategory, UnitOfVolume
 from homeassistant.util import dt as dt_util
@@ -63,9 +64,19 @@ def _sorted_dated_points(data: PropertyData) -> list[Any]:
 
 
 def _latest_point(data: PropertyData) -> Any | None:
-    """Return the most recent daily point Yorkshire Water has delivered."""
-    points = _sorted_dated_points(data)
-    return points[-1] if points else None
+    """Return the most recent REAL daily point Yorkshire Water has delivered.
+
+    Skips placeholder days that are flagged missing or carry no litres,
+    so the "latest reading" reflects the freshest actual measurement
+    rather than a trailing gap.
+    """
+    for point in reversed(_sorted_dated_points(data)):
+        if getattr(point, "is_missing", False):
+            continue
+        if point.total_consumption_litres is None:
+            continue
+        return point
+    return None
 
 
 # --- live-current value functions -------------------------------------------
@@ -281,6 +292,11 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
     YorkshireWaterSensorEntityDescription(
         key="continuous_flow_rate",
         name="Continuous flow rate",
+        # A genuine instantaneous measurement (unlike the daily-batch
+        # totals), so it keeps state_class=measurement and is tracked in
+        # long-term statistics - a slowly rising baseline is an early
+        # leak signal worth charting.
+        state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement="L/h",
         suggested_display_precision=1,
         value_fn=_continuous_flow_rate,
