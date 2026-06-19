@@ -40,10 +40,11 @@ Each refresh the integration does three things:
 2. Calls the same private API the `my.yorkshirewater.com` SPA uses, in
    the same order: `meter-details`, `current-consumption`, `your-usage`
    (monthly), `daily-consumption`, `yearly-consumption`.
-3. Maps the responses into the Home Assistant sensor entities: meter
-   status, yesterday's consumption and cost, an 8-day rolling total,
-   monthly and year-to-date totals, cumulative consumption and cost
-   for the Energy Dashboard, plus the leak-detection binary sensor.
+3. Maps the responses into Home Assistant. A small set of
+   current-value sensors (meter status, month-to-date and year-to-date
+   totals, the leak-detection sensor) plus four long-term statistics
+   per property that hold the dated daily and monthly history for
+   charts and the Energy Dashboard.
 
 Between scheduled refreshes the integration sends a small
 `/connect/authorize?prompt=none` keep-alive every few minutes so the
@@ -81,23 +82,22 @@ Two specific situations to know about:
 Yorkshire Water only ever publish a *complete* daily total, and they
 publish it a day or more after the day has ended. There is therefore
 no "consumption today" sensor: a finished total for the current,
-unfinished day cannot exist, and by the time the total is settled the
-day is already "yesterday".
+unfinished day cannot exist, and the latest settled day is usually two
+days back. They also do not poll meters every single day, so some days
+simply have no reading and some weeks have several missing ones. This
+is the underlying data shape, not an integration bug.
 
-The freshest daily figure the integration can show is **Consumption
-yesterday** / **Cost yesterday**. Even those render as *Unavailable*
-whenever Yorkshire Water have not yet delivered yesterday's reading,
-which is common because they do not poll meters every single day. Some
-days simply have no reading; some weeks have several missing days.
-This is the underlying data shape, not an integration bug.
+Because daily figures arrive late and dated to a past day, they live
+in long-term **statistics**, not in live sensors. Each poll the
+integration backfills the dated daily and monthly series (see *Charts
+and the Energy Dashboard* below), gaps and all, so the bar charts and
+the Energy Dashboard always show correctly-dated history.
 
-For a value that is always populated, use:
-
-- **Consumption (last 8 days)**: sum of every reading that landed in
-  the last 8 days, ignoring gaps.
-- **Cumulative consumption**: monotonic total that the Energy
-  Dashboard reads. Survives restarts via `RestoreEntity` and only ever
-  grows.
+The one live readout of daily data is the **Latest daily consumption**
+diagnostic sensor. It always shows the freshest daily total Yorkshire
+Water have delivered, with the reading's real date and its age in
+`reading_date` and `lag_days` attributes. It is a diagnostic only and
+is never recorded into statistics, so it cannot mis-date the history.
 
 ## How auth works
 
