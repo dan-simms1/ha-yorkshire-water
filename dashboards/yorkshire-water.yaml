@@ -140,7 +140,7 @@ views:
     column_span: 3
     cards:
     - type: heading
-      heading: Trends
+      heading: Daily usage
       heading_style: title
       icon: mdi:chart-bar
     - type: statistics-graph
@@ -161,6 +161,13 @@ views:
       - state
       chart_type: bar
       days_to_show: 30
+  - type: grid
+    column_span: 3
+    cards:
+    - type: heading
+      heading: Monthly usage
+      heading_style: title
+      icon: mdi:calendar-month
     - type: statistics-graph
       title: Monthly consumption
       entities:
