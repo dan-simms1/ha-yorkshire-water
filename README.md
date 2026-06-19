@@ -233,26 +233,22 @@ the next scheduled fire.
 Once the meter is live, the integration creates a single device per property
 with the following entities:
 
+From v3.0 the per-day and per-month *history* lives in long-term
+statistics (see *Charts and the Energy Dashboard* below), not in live
+sensors. The live entities are limited to genuinely-current values:
+
 | Entity | Type | Notes |
 |---|---|---|
-| Consumption (last 8 days) | sensor | Sum of every reading in the last 8 days, in litres |
-| Consumption yesterday | sensor | Yesterday's daily total in litres (Unavailable until YW deliver it) |
-| Cost yesterday | sensor | Yesterday's cost total in pounds |
+| Latest daily consumption | sensor | Diagnostic; the freshest daily total YW has delivered, in litres. Attributes carry its `reading_date`, `cost` and `lag_days`. Not recorded into statistics. |
 | Consumption this month | sensor | Month-to-date consumption in litres |
-| Consumption last month | sensor | Previous calendar month's consumption |
 | Clean water cost this month | sensor | Month-to-date clean-water charge |
 | Sewerage cost this month | sensor | Month-to-date sewerage charge |
 | Total cost this month | sensor | Month-to-date total charge (clean water plus sewerage) |
-| Total cost last month | sensor | Previous calendar month's total charge |
 | Consumption year to date | sensor | Year-to-date consumption in litres |
 | Cost year to date | sensor | Year-to-date total charge |
-| Average monthly consumption | sensor | Mean monthly consumption across the year |
-| Average monthly cost | sensor | Mean monthly charge across the year |
-| Cumulative consumption | sensor | Monotonic running total in litres for the Energy Dashboard |
-| Cumulative cost | sensor | Monotonic running cost total in pounds |
 | Continuous flow rate | sensor | Leak-detection flow rate in litres/hour (0 when no leak) |
 | Continuous flow cost per day | sensor | Projected daily cost of a detected leak (0 when no leak) |
-| Last YW reading date | sensor | Diagnostic; the date Yorkshire Water last read the meter (date only, not a precise time) |
+| Last YW reading date | sensor | Diagnostic; the date Yorkshire Water last read the meter (date only) |
 | Last update time | sensor | Diagnostic; when YW last refreshed their summary |
 | Meter reference | sensor | Diagnostic; the meter identifier |
 | Meter status | sensor | Always available. One of *No meter installed*, *Awaiting activation by Yorkshire Water*, *Live*. |
@@ -260,9 +256,27 @@ with the following entities:
 | Meter active | binary sensor | Diagnostic; true once the meter is live |
 | Refresh now | button | Manually trigger a coordinator refresh |
 
-There is deliberately no "consumption today" or "cost today" entity:
-Yorkshire Water only publish complete daily totals, so a figure for
-the current day cannot exist (see *Daily readings have gaps* above).
+There is deliberately no "consumption today/yesterday", rolling-window
+or cumulative live sensor. YW's daily data is batch and lags ~2 days,
+so a live sensor stamped at poll time would be stale or unavailable;
+the correct home for dated daily/monthly figures is long-term
+statistics.
+
+## Charts and the Energy Dashboard
+
+Each poll the integration backfills four external long-term statistics
+per property (keyed on the account reference):
+
+    yorkshire_water:daily_consumption_<account>
+    yorkshire_water:daily_cost_<account>
+    yorkshire_water:monthly_consumption_<account>
+    yorkshire_water:monthly_cost_<account>
+
+These are dated to each reading, so `statistics-graph` cards show real
+daily/monthly bars from the first poll - including history from before
+the integration was installed. The daily-consumption statistic carries
+a monotonic cumulative `sum`, so it is the recommended **Energy
+Dashboard** water source (with `daily_cost` as its cost statistic).
 
 Multi-property accounts get one device per property.
 

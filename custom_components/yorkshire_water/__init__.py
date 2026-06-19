@@ -230,6 +230,21 @@ _DEPRECATED_SENSOR_KEYS: tuple[str, ...] = (
     # sensors were structurally always unavailable.
     "consumption_today",
     "cost_today",
+    # Removed in v3.0.0 (statistics-first redesign). Daily/yesterday and
+    # rolling-window values are misleading for daily-batch, ~2-day-lagged
+    # data; the dated history now lives in long-term statistics. The
+    # cumulative RestoreEntity sensors are replaced by the external
+    # daily statistic as the Energy Dashboard source. The last-month and
+    # monthly-average values remain available via the monthly statistics.
+    "consumption_yesterday",
+    "cost_yesterday",
+    "window_consumption",
+    "cumulative_consumption",
+    "cumulative_cost",
+    "consumption_last_month",
+    "cost_last_month_total",
+    "average_monthly_consumption",
+    "average_monthly_cost",
 )
 
 

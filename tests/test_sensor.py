@@ -42,63 +42,43 @@ async def test_sensors_when_meter_live(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    yesterday = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_yesterday")
-    window = hass.states.get(f"sensor.{PROPERTY_SLUG}_window_consumption")
-    meter_ref = hass.states.get(f"sensor.{PROPERTY_SLUG}_meter_reference")
-    cumulative = hass.states.get(f"sensor.{PROPERTY_SLUG}_cumulative_consumption")
+    # v3.0 surface: no daily/yesterday/window/cumulative live sensors -
+    # the dated history lives in long-term statistics. The live sensors
+    # are current-value + diagnostics only.
+    for gone in (
+        "consumption_today",
+        "consumption_yesterday",
+        "cost_yesterday",
+        "window_consumption",
+        "cumulative_consumption",
+        "cumulative_cost",
+        "consumption_last_month",
+        "average_monthly_consumption",
+    ):
+        assert hass.states.get(f"sensor.{PROPERTY_SLUG}_{gone}") is None
 
-    # There is no "today" sensor: YW only publish complete daily totals.
-    assert hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_today") is None
-    assert yesterday is not None
-    assert yesterday.state not in (None, STATE_UNAVAILABLE)
-    assert window is not None
+    meter_ref = hass.states.get(f"sensor.{PROPERTY_SLUG}_meter_reference")
     assert meter_ref is not None
     assert meter_ref.state == "WAKE-001"
-    # Cumulative sensor should report the sum of all daily points
-    # (95 + 110.5 + 78 = 283.5 from the test fixture).
-    assert cumulative is not None
-    assert float(cumulative.state) == pytest.approx(283.5)
-    # Energy Dashboard requires the right device class and state class.
-    assert cumulative.attributes["device_class"] == "water"
-    assert cumulative.attributes["state_class"] == "total_increasing"
 
-    # Meter status carries the property address as an attribute so the
-    # dashboard can render a per-property heading without hard-coding it.
+    # Latest daily reading diagnostic: freshest fixture day (78.0) with
+    # its date + lag exposed as attributes, and no state_class (so it is
+    # not recorded into long-term statistics).
+    latest = hass.states.get(f"sensor.{PROPERTY_SLUG}_latest_daily_consumption")
+    assert latest is not None
+    assert float(latest.state) == pytest.approx(78.0)
+    assert "reading_date" in latest.attributes
+    assert "lag_days" in latest.attributes
+    assert latest.attributes.get("state_class") is None
+
+    # Month-to-date total sensor exists (its value depends on the
+    # your-usage payload, which this fixture does not populate).
+    assert hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_this_month") is not None
+
+    # Meter status still carries the property address attribute.
     meter_status = hass.states.get(f"sensor.{PROPERTY_SLUG}_meter_status")
     assert meter_status is not None
     assert "Example Street" in meter_status.attributes.get("address", "")
-
-
-async def test_cumulative_sensor_is_monotonic(
-    hass: HomeAssistant,
-    mock_client_live: MagicMock,
-) -> None:
-    """If a poll returns less data than the previous one, cumulative does not drop."""
-    from pyyorkshirewater import DailyConsumptionPoint
-
-    entry = _entry(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-
-    cumulative_first = hass.states.get(
-        f"sensor.{PROPERTY_SLUG}_cumulative_consumption",
-    )
-    first_value = float(cumulative_first.state)
-
-    mock_client_live.get_daily_consumption.return_value = [
-        DailyConsumptionPoint.from_api(
-            {"date": "2026-05-06", "totalConsumptionLitres": 78.0},
-        ),
-    ]
-    await entry.runtime_data.coordinator.async_refresh()
-    await hass.async_block_till_done()
-
-    cumulative_after = hass.states.get(
-        f"sensor.{PROPERTY_SLUG}_cumulative_consumption",
-    )
-    # The cumulative should not decrease, even though the window now
-    # contains less data.
-    assert float(cumulative_after.state) >= first_value
 
 
 async def test_sensors_unavailable_when_pending(
@@ -109,14 +89,11 @@ async def test_sensors_unavailable_when_pending(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    yesterday = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_yesterday")
-    window = hass.states.get(f"sensor.{PROPERTY_SLUG}_window_consumption")
+    latest = hass.states.get(f"sensor.{PROPERTY_SLUG}_latest_daily_consumption")
     meter_ref = hass.states.get(f"sensor.{PROPERTY_SLUG}_meter_reference")
 
-    assert yesterday is not None
-    assert yesterday.state == STATE_UNAVAILABLE
-    assert window is not None
-    assert window.state == STATE_UNAVAILABLE
+    assert latest is not None
+    assert latest.state == STATE_UNAVAILABLE
     assert meter_ref is not None
     assert meter_ref.state == "WAKE-001"
 

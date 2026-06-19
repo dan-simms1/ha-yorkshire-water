@@ -1,32 +1,32 @@
-# Sample Lovelace dashboard for the Yorkshire Water integration.
+# Sample Lovelace dashboard for the Yorkshire Water integration (v3.0+).
 #
 # How to use
 # ----------
 # 1. Open Settings -> Dashboards -> Add Dashboard.
 # 2. Choose "Take control" then paste this YAML in the dashboard
 #    editor's raw configuration view.
-# 3. Find-replace the placeholder `1_example_street_sometown_anywhere_ex1_1ex`
-#    everywhere with your property's entity-id slug. To find your slug:
-#    Settings -> Devices & Services -> Yorkshire Water -> click your
-#    property device -> any entity, e.g. "Consumption yesterday" -> the
-#    entity_id is `sensor.<slug>_consumption_yesterday`.
+# 3. Find-replace the placeholder account number `1234567890123456`
+#    everywhere with your property's 16-digit account reference (no
+#    spaces). To find it: Settings -> Devices & Services -> Yorkshire
+#    Water -> your property device -> any entity, e.g. "Latest daily
+#    consumption" -> the entity_id is `sensor.<account>_latest_daily_consumption`.
+#    That single number keys both the entity_ids and the
+#    yorkshire_water:* statistic ids the charts read.
 #
 # Multiple properties
 # -------------------
-# If you have more than one property on your YW account, copy the
-# "Smart Meter" view and adjust the slug for each. Each property has
-# its own device in Home Assistant and its own entity-id slug
-# derived from the address.
+# Copy the "Smart Meter" view, give the copy its own title/path, and
+# swap the account number. Each property has its own device, entities
+# and statistics.
 #
-# "No reading" text on the Yesterday tiles
-# ----------------------------------------
-# The yesterday consumption / cost sensors render as Unavailable on
-# days Yorkshire Water have not yet delivered a reading (their daily
-# pipeline runs a day or more behind). HA's frontend uses
-# "Unavailable" as a built-in label that integrations cannot override
-# on a numeric sensor. If you want them to say "No reading" instead,
-# install HACS frontend mushroom and swap each tile for a
-# `custom:mushroom-template-card`; see dashboards/README.md.
+# About the layout
+# ----------------
+# Yorkshire Water water meters report ~daily, a couple of days behind,
+# so per-day and per-month history lives in long-term statistics - the
+# Trends bar charts read those (yorkshire_water:* statistic ids), not
+# live sensors. The tiles show genuinely-current values: the freshest
+# delivered daily reading, month-to-date and year-to-date totals, plus
+# meter status and leak detection.
 #
 # This dashboard is unofficial and not affiliated with Yorkshire Water.
 
@@ -81,22 +81,22 @@ views:
       heading_style: title
       icon: mdi:water
     - type: tile
-      entity: sensor.1234567890123456_consumption_yesterday
-      name: Yesterday
+      entity: sensor.1234567890123456_latest_daily_consumption
+      name: Latest day
       color: blue
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1234567890123456_window_consumption
-      name: Last 8 days
+      entity: sensor.1234567890123456_consumption_this_month
+      name: This month
       color: blue
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1234567890123456_cumulative_consumption
-      name: Total tracked
+      entity: sensor.1234567890123456_consumption_year_to_date
+      name: Year to date
       color: blue
       vertical: true
       tap_action:
@@ -109,85 +109,29 @@ views:
       heading_style: title
       icon: mdi:currency-gbp
     - type: tile
-      entity: sensor.1234567890123456_cost_yesterday
-      name: Yesterday
-      color: green
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
-      entity: sensor.1234567890123456_cumulative_cost
-      name: Total tracked
-      color: green
-      vertical: true
-      tap_action:
-        action: more-info
-  - type: grid
-    column_span: 3
-    cards:
-    - type: heading
-      heading: Monthly
-      heading_style: title
-      icon: mdi:calendar-month
-    - type: tile
-      entity: sensor.1234567890123456_consumption_this_month
-      name: This month
-      color: blue
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
-      entity: sensor.1234567890123456_consumption_last_month
-      name: Last month
-      color: blue
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
       entity: sensor.1234567890123456_cost_this_month_total
-      name: Cost this month
+      name: This month
       color: green
       vertical: true
       tap_action:
         action: more-info
     - type: tile
-      entity: sensor.1234567890123456_cost_last_month_total
-      name: Cost last month
+      entity: sensor.1234567890123456_cost_this_month_clean_water
+      name: Clean water (mth)
       color: green
       vertical: true
       tap_action:
         action: more-info
-  - type: grid
-    column_span: 3
-    cards:
-    - type: heading
-      heading: Year to date
-      heading_style: title
-      icon: mdi:calendar-clock
     - type: tile
-      entity: sensor.1234567890123456_consumption_year_to_date
-      name: Consumption YTD
-      color: blue
+      entity: sensor.1234567890123456_cost_this_month_sewerage
+      name: Sewerage (mth)
+      color: green
       vertical: true
       tap_action:
         action: more-info
     - type: tile
       entity: sensor.1234567890123456_cost_year_to_date
-      name: Cost YTD
-      color: green
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
-      entity: sensor.1234567890123456_average_monthly_consumption
-      name: Avg monthly use
-      color: blue
-      vertical: true
-      tap_action:
-        action: more-info
-    - type: tile
-      entity: sensor.1234567890123456_average_monthly_cost
-      name: Avg monthly cost
+      name: Year to date
       color: green
       vertical: true
       tap_action:
@@ -199,24 +143,6 @@ views:
       heading: Trends
       heading_style: title
       icon: mdi:chart-bar
-    - type: statistics-graph
-      title: Monthly consumption
-      entities:
-      - yorkshire_water:monthly_consumption_1234567890123456
-      period: month
-      stat_types:
-      - state
-      chart_type: bar
-      days_to_show: 365
-    - type: statistics-graph
-      title: Monthly cost
-      entities:
-      - yorkshire_water:monthly_cost_1234567890123456
-      period: month
-      stat_types:
-      - state
-      chart_type: bar
-      days_to_show: 365
     - type: statistics-graph
       title: Daily consumption
       entities:
@@ -235,6 +161,24 @@ views:
       - state
       chart_type: bar
       days_to_show: 30
+    - type: statistics-graph
+      title: Monthly consumption
+      entities:
+      - yorkshire_water:monthly_consumption_1234567890123456
+      period: month
+      stat_types:
+      - state
+      chart_type: bar
+      days_to_show: 365
+    - type: statistics-graph
+      title: Monthly cost
+      entities:
+      - yorkshire_water:monthly_cost_1234567890123456
+      period: month
+      stat_types:
+      - state
+      chart_type: bar
+      days_to_show: 365
   - type: grid
     column_span: 3
     cards:
@@ -244,6 +188,8 @@ views:
       icon: mdi:wrench
     - type: entities
       entities:
+      - entity: sensor.1234567890123456_latest_daily_consumption
+        name: Latest daily reading
       - entity: sensor.1234567890123456_meter_reference
         name: Meter reference
       - entity: sensor.1234567890123456_last_reading_time

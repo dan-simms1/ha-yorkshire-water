@@ -570,7 +570,9 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         # data refresh.
         for prop_data in property_snapshots:
             try:
-                async_import_property_statistics(self.hass, prop_data)
+                await async_import_property_statistics(
+                    self.hass, self.entry.entry_id, prop_data,
+                )
             except Exception:
                 LOGGER.exception(
                     "Failed to import YW statistics for %s",
