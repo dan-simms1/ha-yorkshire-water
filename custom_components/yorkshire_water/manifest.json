@@ -1,10 +1,10 @@
 {
     "domain": "yorkshire_water",
     "name": "Yorkshire Water",
+    "after_dependencies": ["recorder"],
     "codeowners": ["@dan-simms1"],
     "config_flow": true,
     "dependencies": [],
-    "after_dependencies": ["recorder"],
     "documentation": "https://github.com/dan-simms1/ha-yorkshire-water",
     "integration_type": "service",
     "iot_class": "cloud_polling",
@@ -13,5 +13,5 @@
     "requirements": [
         "pyyorkshirewater==1.5.0"
     ],
-    "version": "3.0.2"
+    "version": "3.0.3"
 }
