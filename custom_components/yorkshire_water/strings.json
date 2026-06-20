@@ -68,7 +68,7 @@
                 "name": "Last update"
             },
             "last_update_status": {
-                "name": "Last update status",
+                "name": "Update status",
                 "state": {
                     "ok": "OK",
                     "no_attempt": "No attempt yet",

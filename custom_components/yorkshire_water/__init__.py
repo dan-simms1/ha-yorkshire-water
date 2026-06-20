@@ -180,6 +180,7 @@ async def async_setup_entry(
     # Drop any orphaned entities from prior versions before HA
     # registers the current set on this setup pass.
     _drop_deprecated_entities(hass, coordinator)
+    _drop_deprecated_entry_entities(hass, entry)
 
     # One-time migration: rename address-derived entity_ids to the
     # account-based scheme so the home address is no longer embedded in
@@ -352,6 +353,31 @@ def _migrate_address_entity_ids(
         entry,
         data={**entry.data, _ENTITY_ID_PRIVACY_MIGRATION: True},
     )
+
+
+# Entry-level (account device) entities removed in later versions, keyed
+# by (platform, key). Their unique_id is `{entry_id}_{key}`. v3.1.1 drops
+# the `update_problem` binary sensor: a `problem` whose off-state reads as
+# "OK" was confusing next to the Update status enum, which now carries the
+# outcome on its own.
+_DEPRECATED_ENTRY_ENTITIES: tuple[tuple[str, str], ...] = (
+    ("binary_sensor", "update_problem"),
+)
+
+
+def _drop_deprecated_entry_entities(
+    hass: HomeAssistant,
+    entry: YorkshireWaterConfigEntry,
+) -> None:
+    """Remove orphaned entry-level entities from earlier versions."""
+    ent_reg = er.async_get(hass)
+    for platform, key in _DEPRECATED_ENTRY_ENTITIES:
+        entity_id = ent_reg.async_get_entity_id(
+            platform, DOMAIN, f"{entry.entry_id}_{key}",
+        )
+        if entity_id:
+            LOGGER.info("Removing deprecated YW entry-level entity %s", entity_id)
+            ent_reg.async_remove(entity_id)
 
 
 def _drop_deprecated_entities(

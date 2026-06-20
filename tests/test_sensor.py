@@ -220,7 +220,6 @@ async def test_clear_deprecated_statistics_purges_orphans(
 # Entry-level health entities are keyed on the domain, not the account.
 _LAST_UPDATE = "sensor.yorkshire_water_last_update"
 _UPDATE_STATUS = "sensor.yorkshire_water_last_update_status"
-_UPDATE_PROBLEM = "binary_sensor.yorkshire_water_update_problem"
 
 
 async def test_health_entities_present_and_healthy(
@@ -244,19 +243,14 @@ async def test_health_entities_present_and_healthy(
     assert status.attributes.get("last_error") is None
     assert status.attributes.get("last_successful_update") is not None
 
-    # Problem off when the last poll worked.
-    problem = hass.states.get(_UPDATE_PROBLEM)
-    assert problem is not None
-    assert problem.state == "off"
 
-
-async def test_real_refresh_failure_flips_health_and_hides_sensors(
+async def test_real_refresh_failure_flips_status_and_hides_sensors(
     hass: HomeAssistant,
     mock_client_live: MagicMock,
 ) -> None:
-    """A genuine async_refresh() failure flips status/problem via the real
+    """A genuine async_refresh() failure sets the status enum via the real
     coordinator path, marks normal sensors unavailable, and keeps the
-    health entities available."""
+    status sensor available with the error in its attribute."""
     entry = _entry(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
@@ -270,15 +264,10 @@ async def test_real_refresh_failure_flips_health_and_hides_sensors(
     await hass.async_block_till_done()
 
     assert coordinator.last_update_success is False
-    problem = hass.states.get(_UPDATE_PROBLEM)
-    assert problem is not None
-    assert problem.state == "on"
-    assert problem.attributes.get("status") == "api_error"
-    assert "boom" in (problem.attributes.get("last_error") or "")
-
     status = hass.states.get(_UPDATE_STATUS)
     assert status is not None
     assert status.state == "api_error"
+    assert "boom" in (status.attributes.get("last_error") or "")
 
     # last_update advanced to the failed attempt; entity stays available.
     last_update = hass.states.get(_LAST_UPDATE)
@@ -292,12 +281,12 @@ async def test_real_refresh_failure_flips_health_and_hides_sensors(
     assert month.state == STATE_UNAVAILABLE
 
 
-async def test_repeated_failure_updates_health(
+async def test_repeated_failure_updates_status(
     hass: HomeAssistant,
     mock_client_live: MagicMock,
 ) -> None:
-    """A second consecutive failure still updates the diagnostics, even
-    though HA suppresses its own listener notification on repeats."""
+    """A second consecutive failure still updates the status, even though
+    HA suppresses its own listener notification on repeats."""
     from pyyorkshirewater import YorkshireWaterAPIError
 
     entry = _entry(hass)
@@ -308,14 +297,14 @@ async def test_repeated_failure_updates_health(
     mock_client_live.get_meter_details.side_effect = YorkshireWaterAPIError("first")
     await coordinator.async_refresh()
     await hass.async_block_till_done()
-    assert "first" in (hass.states.get(_UPDATE_PROBLEM).attributes["last_error"])
+    assert "first" in (hass.states.get(_UPDATE_STATUS).attributes["last_error"])
 
     mock_client_live.get_meter_details.side_effect = YorkshireWaterAPIError("second")
     await coordinator.async_refresh()
     await hass.async_block_till_done()
-    problem = hass.states.get(_UPDATE_PROBLEM)
-    assert problem.state == "on"
-    assert "second" in (problem.attributes["last_error"])
+    status = hass.states.get(_UPDATE_STATUS)
+    assert status.state == "api_error"
+    assert "second" in (status.attributes["last_error"])
 
 
 async def test_classify_maps_exceptions_to_status() -> None:

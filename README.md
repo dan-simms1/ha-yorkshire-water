@@ -272,8 +272,7 @@ available, even while a poll is failing.
 | Entity | Type | Notes |
 |---|---|---|
 | Last update | sensor | When the integration last *ran* a poll (timestamp), success or failure. |
-| Last update status | sensor | Enum: `ok`, `login_failed`, `bridge_unreachable`, `api_error`, `unknown_error`, or `no_attempt` (until the first poll). The short error text is in the `last_error` attribute. |
-| Update problem | binary sensor | Problem; on when the last poll failed. Attributes carry `status`, `last_error`, `last_successful_update` and `last_attempt`. |
+| Update status | sensor | Enum: `ok`, `login_failed`, `bridge_unreachable`, `api_error`, `unknown_error`, or `no_attempt` (until the first poll). The short error text is in the `last_error` attribute, and the last good poll time in `last_successful_update`. Automate on `state != 'ok'`. |
 
 ## Charts and the Energy Dashboard
 
