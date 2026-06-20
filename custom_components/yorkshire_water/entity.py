@@ -93,6 +93,11 @@ class YorkshireWaterEntity(CoordinatorEntity["YorkshireWaterCoordinator"]):
             name=device_name,
             serial_number=meter_reference,
             configuration_url="https://my.yorkshirewater.com",
+            # Hang each per-property meter device off the account-level
+            # "Yorkshire Water" device (which hosts the health + refresh
+            # entities). HA then renders that account device as the
+            # parent hub with the smart-meter devices nested beneath it.
+            via_device=(DOMAIN, f"{coordinator.entry.entry_id}_account"),
         )
 
     def property_data(self) -> PropertyData | None:

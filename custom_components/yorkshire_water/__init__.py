@@ -27,6 +27,7 @@ from .const import (
     DEFAULT_NODRIVER_URL,
     DOMAIN,
     LOGGER,
+    MANUFACTURER,
 )
 from .coordinator import YorkshireWaterCoordinator, YorkshireWaterData
 from .statistics import async_remove_statistics_ledger
@@ -214,6 +215,13 @@ async def async_setup_entry(
     if new_title and new_title != entry.title:
         hass.config_entries.async_update_entry(entry, title=new_title)
 
+    # Register the account-level hub device up front, before the
+    # platforms set up. The per-property meter devices reference it via
+    # `via_device`, which only resolves if the hub already exists when
+    # those devices are created - otherwise the link is silently dropped
+    # and the meters do not nest under the account device.
+    _register_account_device(hass, entry)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
@@ -365,6 +373,28 @@ _DEPRECATED_ENTRY_ENTITIES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _register_account_device(
+    hass: HomeAssistant,
+    entry: YorkshireWaterConfigEntry,
+) -> None:
+    """Create the account-level hub device the property meters nest under.
+
+    Must run before platform setup so `via_device` on the per-property
+    devices resolves. Idempotent: async_get_or_create updates in place.
+    The health and refresh entities attach to this same device via their
+    matching identifier.
+    """
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{entry.entry_id}_account")},
+        manufacturer=MANUFACTURER,
+        model="Account",
+        name="Yorkshire Water",
+        entry_type=dr.DeviceEntryType.SERVICE,
+        configuration_url="https://my.yorkshirewater.com",
+    )
+
+
 def _drop_deprecated_entry_entities(
     hass: HomeAssistant,
     entry: YorkshireWaterConfigEntry,
@@ -405,6 +435,14 @@ def _drop_deprecated_entities(
                     unique_id,
                 )
                 ent_reg.async_remove(entity_id)
+        # The Refresh button moved from the per-property device to the
+        # account-level device in v3.1.2; drop the old per-property one.
+        old_button = ent_reg.async_get_entity_id(
+            "button", DOMAIN, f"{display_ref}_refresh_now",
+        )
+        if old_button:
+            LOGGER.info("Removing deprecated YW per-property button %s", old_button)
+            ent_reg.async_remove(old_button)
 
 
 def _clear_deprecated_statistics(

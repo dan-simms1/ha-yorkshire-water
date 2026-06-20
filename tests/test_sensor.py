@@ -244,6 +244,38 @@ async def test_health_entities_present_and_healthy(
     assert status.attributes.get("last_successful_update") is not None
 
 
+async def test_account_device_is_hub_with_button(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """The account device hosts the refresh button and is the parent hub
+    of the per-property smart-meter device."""
+    from homeassistant.helpers import device_registry as dr
+
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    account = dev_reg.async_get_device(
+        identifiers={(DOMAIN, f"{entry.entry_id}_account")},
+    )
+    assert account is not None
+    assert account.name == "Yorkshire Water"
+
+    # Refresh button is account-level, not per-property.
+    btn = ent_reg.async_get("button.yorkshire_water_refresh_now")
+    assert btn is not None
+    assert btn.device_id == account.id
+    assert hass.states.get(f"button.{PROPERTY_SLUG}_refresh_now") is None
+
+    # The per-property meter device hangs off the account device.
+    meter = dev_reg.async_get_device(identifiers={(DOMAIN, PROPERTY_SLUG)})
+    assert meter is not None
+    assert meter.via_device_id == account.id
+
+
 async def test_real_refresh_failure_flips_status_and_hides_sensors(
     hass: HomeAssistant,
     mock_client_live: MagicMock,

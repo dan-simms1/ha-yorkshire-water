@@ -254,7 +254,6 @@ sensors. The live entities are limited to genuinely-current values:
 | Meter status | sensor | Always available. One of *No meter installed*, *Awaiting activation by Yorkshire Water*, *Live*. |
 | Continuous flow alarm | binary sensor | Yorkshire Water's leak alert |
 | Meter active | binary sensor | Diagnostic; true once the meter is live |
-| Refresh now | button | Manually trigger a coordinator refresh |
 
 There is deliberately no "consumption today/yesterday", rolling-window
 or cumulative live sensor. YW's daily data is batch and lags ~2 days,
@@ -265,14 +264,17 @@ statistics.
 ### Integration health
 
 A separate account-level **Yorkshire Water** device carries the
-integration's own health, so you can see at a glance whether polling is
-working (these are about the addon, not the meter). They are always
-available, even while a poll is failing.
+integration's own health plus the manual-refresh control, so you can
+see at a glance whether polling is working (these are about the addon,
+not the meter). The per-property smart-meter devices hang off this
+device, so it sits at the top with the meters nested beneath it. These
+entities are always available, even while a poll is failing.
 
 | Entity | Type | Notes |
 |---|---|---|
 | Last update | sensor | When the integration last *ran* a poll (timestamp), success or failure. |
 | Update status | sensor | Enum: `ok`, `login_failed`, `bridge_unreachable`, `api_error`, `unknown_error`, or `no_attempt` (until the first poll). The short error text is in the `last_error` attribute, and the last good poll time in `last_successful_update`. Automate on `state != 'ok'`. |
+| Refresh now | button | Manually queue an immediate refresh (covers every property). Always available - it is the recovery path out of a stuck state. |
 
 ## Charts and the Energy Dashboard
 

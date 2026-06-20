@@ -1,31 +1,28 @@
 """Button entities for the Yorkshire Water integration.
 
-A single Refresh button per property: pressing it queues an immediate
-coordinator refresh. Useful for watching the login process via the
-Playwright add-on's noVNC console without waiting for the next
-scheduled clock fire.
+A single account-level Refresh button: pressing it queues an immediate
+coordinator refresh (which covers every property on the account). It
+lives on the same entry-level device as the health diagnostics, since a
+refresh is an account-wide action, not a per-property one. Useful for
+watching the login process via the add-on's noVNC console without
+waiting for the next scheduled clock fire, and as the recovery path out
+of a stuck/failed state.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
+from homeassistant.components.button import ButtonEntity
 
-from .entity import YorkshireWaterEntity
+from .entity import YorkshireWaterEntryEntity
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
     from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
     from . import YorkshireWaterConfigEntry
-    from .coordinator import PropertyData, YorkshireWaterCoordinator
-
-
-REFRESH_NOW = ButtonEntityDescription(
-    key="refresh_now",
-    translation_key="refresh_now",
-)
+    from .coordinator import YorkshireWaterCoordinator
 
 
 async def async_setup_entry(
@@ -33,32 +30,24 @@ async def async_setup_entry(
     entry: YorkshireWaterConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Register one Refresh button per property snapshot."""
+    """Register the single account-level Refresh button.
+
+    Created unconditionally (not gated on coordinator data) so it is
+    present even after a failed first bootstrap - which is exactly when
+    the user needs the manual retry path.
+    """
     coordinator = entry.runtime_data.coordinator
-    if coordinator.data is None:
-        return
-    async_add_entities(
-        YorkshireWaterRefreshNowButton(coordinator, snapshot)
-        for snapshot in coordinator.data.properties
-    )
+    async_add_entities([YorkshireWaterRefreshNowButton(coordinator)])
 
 
-class YorkshireWaterRefreshNowButton(YorkshireWaterEntity, ButtonEntity):
+class YorkshireWaterRefreshNowButton(YorkshireWaterEntryEntity, ButtonEntity):
     """Manually request an immediate coordinator refresh."""
 
-    entity_description = REFRESH_NOW
+    _attr_translation_key = "refresh_now"
 
-    def __init__(
-        self,
-        coordinator: YorkshireWaterCoordinator,
-        property_data: PropertyData,
-    ) -> None:
-        """Wire the button into the property's existing device."""
-        super().__init__(
-            coordinator,
-            property_data=property_data,
-            key="refresh_now",
-        )
+    def __init__(self, coordinator: YorkshireWaterCoordinator) -> None:
+        """Wire the button into the entry-level account device."""
+        super().__init__(coordinator, key="refresh_now")
 
     @property
     def available(self) -> bool:
