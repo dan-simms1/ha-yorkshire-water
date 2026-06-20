@@ -147,7 +147,7 @@ class YorkshireWaterEntryEntity(CoordinatorEntity["YorkshireWaterCoordinator"]):
             identifiers={(DOMAIN, f"{entry_id}_account")},
             manufacturer=MANUFACTURER,
             model="Account",
-            name="Yorkshire Water",
+            name="Yorkshire Water Account",
             entry_type=DeviceEntryType.SERVICE,
             configuration_url="https://my.yorkshirewater.com",
         )

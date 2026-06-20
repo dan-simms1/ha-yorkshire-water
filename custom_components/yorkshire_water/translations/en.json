@@ -61,6 +61,12 @@
     },
     "entity": {
         "sensor": {
+            "account_number": {
+                "name": "Account number"
+            },
+            "customer_name": {
+                "name": "Customer name"
+            },
             "last_reading_time": {
                 "name": "Latest daily reading date"
             },

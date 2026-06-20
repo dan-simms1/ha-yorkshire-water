@@ -261,17 +261,19 @@ so a live sensor stamped at poll time would be stale or unavailable;
 the correct home for dated daily/monthly figures is long-term
 statistics.
 
-### Integration health
+### The account device
 
-A separate account-level **Yorkshire Water** device carries the
-integration's own health plus the manual-refresh control, so you can
-see at a glance whether polling is working (these are about the addon,
-not the meter). The per-property smart-meter devices hang off this
-device, so it sits at the top with the meters nested beneath it. These
-entities are always available, even while a poll is failing.
+A separate **Yorkshire Water Account** device carries everything that is
+generic to the account rather than a specific meter: the integration's
+own health, the account identity, and the manual-refresh control. The
+per-property smart-meter devices hang off this device (it is their
+`via_device` parent). These entities are always available, even while a
+poll is failing.
 
 | Entity | Type | Notes |
 |---|---|---|
+| Customer name | sensor | The account holder. Email, phone and title ride as attributes (kept out of the state to limit PII in history). |
+| Account number | sensor | The customer / account number, grouped as printed on the bill. Blank for multi-property accounts where each property has its own reference (those are on each meter device). |
 | Last update | sensor | When the integration last *ran* a poll (timestamp), success or failure. |
 | Update status | sensor | Enum: `ok`, `login_failed`, `bridge_unreachable`, `api_error`, `unknown_error`, or `no_attempt` (until the first poll). The short error text is in the `last_error` attribute, and the last good poll time in `last_successful_update`. Automate on `state != 'ok'`. |
 | Refresh now | button | Manually queue an immediate refresh (covers every property). Always available - it is the recovery path out of a stuck state. |

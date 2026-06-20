@@ -37,6 +37,7 @@ from .const import (
     ATTR_METER_REFERENCE,
     ATTR_METER_STATUS,
     UPDATE_STATUSES,
+    format_account_number,
 )
 from .entity import YorkshireWaterEntity, YorkshireWaterEntryEntity
 
@@ -348,11 +349,14 @@ async def async_setup_entry(
             entities.append(
                 YorkshireWaterMeterStatusSensor(coordinator, property_data),
             )
-    # Integration-health diagnostics live on the entry-level device, so
-    # they exist exactly once and even before any property data has been
-    # fetched (e.g. a failed first bootstrap).
+    # Account-level entities live on the entry-level device, so they
+    # exist exactly once and even before any property data has been
+    # fetched (e.g. a failed first bootstrap). Health diagnostics plus
+    # the account-generic identity (customer name, account number).
     entities.append(YorkshireWaterLastUpdateSensor(coordinator))
     entities.append(YorkshireWaterUpdateStatusSensor(coordinator))
+    entities.append(YorkshireWaterCustomerNameSensor(coordinator))
+    entities.append(YorkshireWaterAccountNumberSensor(coordinator))
     async_add_entities(entities)
 
 
@@ -576,3 +580,77 @@ class YorkshireWaterUpdateStatusSensor(YorkshireWaterEntryEntity, SensorEntity):
                 last_success.isoformat() if last_success is not None else None
             ),
         }
+
+
+class YorkshireWaterCustomerNameSensor(YorkshireWaterEntryEntity, SensorEntity):
+    """The account holder's name, account-generic so it lives here.
+
+    Contact details (email, phone, title) ride as attributes rather than
+    their own sensors, to keep low-value PII out of the state machine
+    and recorder while still being visible on the entity.
+    """
+
+    _attr_translation_key = "customer_name"
+    _attr_icon = "mdi:account"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: YorkshireWaterCoordinator) -> None:
+        """Bind to the account device."""
+        super().__init__(coordinator, key="customer_name")
+
+    @property
+    def native_value(self) -> str | None:
+        """The customer's full name, or None before any data."""
+        data = self.coordinator.data
+        customer = data.customer if data else None
+        return customer.full_name if customer else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str]:
+        """Contact details for the account holder."""
+        data = self.coordinator.data
+        customer = data.customer if data else None
+        if customer is None:
+            return {}
+        attrs: dict[str, str] = {}
+        if customer.email:
+            attrs["email"] = customer.email
+        if customer.mobile_telephone:
+            attrs["phone"] = customer.mobile_telephone
+        if customer.title:
+            attrs["title"] = customer.title
+        return attrs
+
+
+class YorkshireWaterAccountNumberSensor(YorkshireWaterEntryEntity, SensorEntity):
+    """The customer / account number, grouped as printed on the bill.
+
+    Account-generic, so it lives on the account device (it used to be
+    baked into the config-entry title). With a single property this is
+    the customer number; multi-property accounts carry a distinct
+    reference per property on each meter device, so this stays blank
+    when they differ rather than picking one arbitrarily.
+    """
+
+    _attr_translation_key = "account_number"
+    _attr_icon = "mdi:identifier"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: YorkshireWaterCoordinator) -> None:
+        """Bind to the account device."""
+        super().__init__(coordinator, key="account_number")
+
+    @property
+    def native_value(self) -> str | None:
+        """The bill-grouped account number when unambiguous, else None."""
+        data = self.coordinator.data
+        if data is None:
+            return None
+        refs = {
+            prop.property.display_account_reference
+            for prop in data.properties
+            if prop.property.display_account_reference
+        }
+        if len(refs) == 1:
+            return format_account_number(next(iter(refs)))
+        return None

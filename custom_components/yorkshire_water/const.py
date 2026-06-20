@@ -111,3 +111,15 @@ UPDATE_STATUSES: Final = (
     STATUS_API_ERROR,
     STATUS_UNKNOWN_ERROR,
 )
+
+
+def format_account_number(raw: str) -> str:
+    """Format the 16-digit YW account number with bill-style grouping.
+
+    Yorkshire Water print the account number on bills grouped
+    `1234 5678 9012 345 6` (4-4-4-3-1). Any non-16-digit string is
+    returned as-is so unexpected formats degrade gracefully.
+    """
+    if not raw or not raw.isdigit() or len(raw) != 16:
+        return raw or ""
+    return f"{raw[0:4]} {raw[4:8]} {raw[8:12]} {raw[12:15]} {raw[15:]}"

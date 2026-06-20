@@ -206,11 +206,10 @@ async def async_setup_entry(
     # via the heartbeat_minutes option (0 = off).
     coordinator.schedule_heartbeat()
 
-    # Update the entry title from the freshly-fetched data. Single-property
-    # accounts get a title of the form
-    # "Yorkshire Water Smart Meters (Customer: 1234 5678 9012 345 6)".
-    # Multi-property accounts drop the customer suffix because each
-    # property has its own account number.
+    # Keep the entry title as the plain integration name. The customer
+    # number moved to the Account number sensor on the account device,
+    # so older entries titled "Yorkshire Water Smart Meters (Customer:
+    # ...)" get renamed to "Yorkshire Water" here.
     new_title = _compose_entry_title(coordinator.data)
     if new_title and new_title != entry.title:
         hass.config_entries.async_update_entry(entry, title=new_title)
@@ -389,7 +388,7 @@ def _register_account_device(
         identifiers={(DOMAIN, f"{entry.entry_id}_account")},
         manufacturer=MANUFACTURER,
         model="Account",
-        name="Yorkshire Water",
+        name="Yorkshire Water Account",
         entry_type=dr.DeviceEntryType.SERVICE,
         configuration_url="https://my.yorkshirewater.com",
     )
@@ -518,28 +517,14 @@ def _clear_deprecated_statistics(
     )
 
 
-def _format_account_number(raw: str) -> str:
-    """Format the 16-digit YW account number with thousands-style spacing.
-
-    Yorkshire Water print the account number on bills in the grouping
-    `1234 5678 9012 345 6` (4-4-4-3-1). We mirror that grouping in
-    the integration title for visual consistency. Any non-16-digit
-    string is returned as-is so unexpected formats degrade gracefully.
-    """
-    if not raw or not raw.isdigit() or len(raw) != 16:
-        return raw or ""
-    return f"{raw[0:4]} {raw[4:8]} {raw[8:12]} {raw[12:15]} {raw[15:]}"
-
-
 def _compose_entry_title(data: object) -> str:
-    """Build the integration entry title from the coordinator snapshot."""
-    properties = getattr(data, "properties", None) or []
-    if len(properties) == 1:
-        display_ref = properties[0].property.display_account_reference
-        formatted = _format_account_number(display_ref)
-        if formatted:
-            return f"Yorkshire Water Smart Meters (Customer: {formatted})"
-    return "Yorkshire Water Smart Meters"
+    """The config-entry title.
+
+    The customer number used to live in the title; it now has its own
+    Account number sensor on the account device, so the title is just
+    the plain integration name.
+    """
+    return "Yorkshire Water"
 
 
 async def async_unload_entry(

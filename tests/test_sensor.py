@@ -244,6 +244,28 @@ async def test_health_entities_present_and_healthy(
     assert status.attributes.get("last_successful_update") is not None
 
 
+async def test_account_identity_sensors(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """Customer name and account number are exposed on the account device,
+    with contact details as attributes (not their own states)."""
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    name = hass.states.get("sensor.yorkshire_water_customer_name")
+    assert name is not None
+    assert name.state == "Mr Test User"
+    assert name.attributes.get("email") == "test@example.com"
+    assert name.attributes.get("phone") == "07700900000"
+
+    number = hass.states.get("sensor.yorkshire_water_account_number")
+    assert number is not None
+    # PROPERTY_SLUG 1234567890123456 -> bill grouping.
+    assert number.state == "1234 5678 9012 345 6"
+
+
 async def test_account_device_is_hub_with_button(
     hass: HomeAssistant,
     mock_client_live: MagicMock,
@@ -262,7 +284,7 @@ async def test_account_device_is_hub_with_button(
         identifiers={(DOMAIN, f"{entry.entry_id}_account")},
     )
     assert account is not None
-    assert account.name == "Yorkshire Water"
+    assert account.name == "Yorkshire Water Account"
 
     # Refresh button is account-level, not per-property.
     btn = ent_reg.async_get("button.yorkshire_water_refresh_now")
