@@ -32,10 +32,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
-from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 from pyyorkshirewater import (
     CookieSessionExpiredError,
     CurrentConsumption,
@@ -83,6 +83,12 @@ from .const import (
     MAX_REFRESHES_PER_DAY,
     MIN_HEARTBEAT_MINUTES,
     MIN_REFRESHES_PER_DAY,
+    STATUS_API_ERROR,
+    STATUS_BRIDGE_UNREACHABLE,
+    STATUS_LOGIN_FAILED,
+    STATUS_NO_ATTEMPT,
+    STATUS_OK,
+    STATUS_UNKNOWN_ERROR,
 )
 from .statistics import async_import_property_statistics
 
@@ -156,6 +162,10 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
             hass,
             LOGGER,
             name=DOMAIN,
+            # Bind the coordinator to its config entry explicitly. HA is
+            # phasing out the implicit ContextVar lookup, and it lets the
+            # framework tie refresh logging and teardown to this entry.
+            config_entry=entry,
             # No automatic interval; we handle scheduling ourselves.
             update_interval=None,
         )
@@ -174,6 +184,20 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         # can overlap. Serialise the auth + persist step so the
         # rotated cookie jar is not raced.
         self._auth_lock = asyncio.Lock()
+        # Integration-health state, OWNED here rather than inferred from
+        # HA's `last_update_success`. HA only notifies entity listeners
+        # on the healthy->failed transition and suppresses repeats, so a
+        # second consecutive failure would never reach the diagnostics.
+        # We therefore record our own status on every attempt and notify
+        # listeners ourselves. All in-memory: a cache restore is not a
+        # poll, so status stays `no_attempt` until the first real fetch.
+        self._last_success_time: datetime | None = None
+        self._last_attempt_time: datetime | None = None
+        self._status: str = STATUS_NO_ATTEMPT
+        self._last_error: str | None = None
+        # Set during teardown so a scheduled refresh that is mid-jitter
+        # (asyncio.sleep) bails instead of polling on a dead entry.
+        self._closing = False
 
     @property
     def _bridge_url(self) -> str:
@@ -308,6 +332,8 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         is meant to be cheap; if it fails, the next data refresh
         handles the heavyweight recovery path.
         """
+        if self._closing:
+            return
         if not self._cookies:
             LOGGER.debug(
                 "YW heartbeat: no stored cookies; waiting for next "
@@ -369,10 +395,19 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
             delay,
         )
         await asyncio.sleep(delay)
+        # Cancelling the time-change subscription does not cancel a
+        # callback already sleeping through its jitter. Without this
+        # guard a teardown (reload/unload) mid-jitter would let this
+        # dead coordinator fire a refresh and log a failure that the
+        # live coordinator never made. Bail if we are closing.
+        if self._closing:
+            LOGGER.debug("Scheduled refresh aborted; coordinator is closing")
+            return
         await self.async_request_refresh()
 
     async def async_shutdown(self) -> None:
         """Tear down scheduled callbacks before shutting down the coordinator."""
+        self._closing = True
         self.cancel_scheduled_refreshes()
         self.cancel_heartbeat()
         await super().async_shutdown()
@@ -388,6 +423,63 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         self._cookies = cookies
 
     async def _async_update_data(self) -> YorkshireWaterCoordinatorData:
+        """Run one poll, recording health state and notifying on every attempt.
+
+        HA's DataUpdateCoordinator notifies entity listeners only on the
+        healthy->failed transition and suppresses repeats, so the health
+        diagnostics would miss a second consecutive failure. We own the
+        status ourselves and push an explicit listener update after each
+        attempt, so the diagnostics always reflect the latest outcome.
+        """
+        self._last_attempt_time = dt_util.utcnow()
+        try:
+            snapshot = await self._perform_update()
+        except Exception as err:
+            # Record then re-raise. Catching Exception (not BaseException)
+            # leaves CancelledError to propagate, so a cancelled refresh
+            # is not mis-recorded as a failure.
+            self._record_failure(err)
+            # Only notify ourselves when we were ALREADY failing. On the
+            # first failure after a success, HA will flip
+            # last_update_success and notify on the transition once we
+            # raise, so a manual notify here would just emit a stale
+            # event (normal entities still read available + old data
+            # before HA updates them). On a repeat failure HA suppresses
+            # its notification, so we push one to refresh the health
+            # diagnostics. `last_update_success` still reflects the prior
+            # attempt at this point.
+            if not self.last_update_success:
+                self.async_update_listeners()
+            raise
+        self._record_success()
+        # Success always notifies via HA's own post-refresh path (data is
+        # assigned after we return), so no manual notify is needed here.
+        return snapshot
+
+    def _record_success(self) -> None:
+        """Stamp a successful poll."""
+        self._last_success_time = dt_util.utcnow()
+        self._status = STATUS_OK
+        self._last_error = None
+
+    def _record_failure(self, err: Exception) -> None:
+        """Classify and store a failed poll for the health diagnostics."""
+        self._status = self._classify(err)
+        self._last_error = str(err) or err.__class__.__name__
+
+    @staticmethod
+    def _classify(err: Exception) -> str:
+        """Map a poll exception to a stable status enum value."""
+        cause = err.__cause__ or err
+        if isinstance(cause, BridgeUnreachableError):
+            return STATUS_BRIDGE_UNREACHABLE
+        if isinstance(cause, (BridgeLoginError, CookieSessionExpiredError)):
+            return STATUS_LOGIN_FAILED
+        if isinstance(err, UpdateFailed):
+            return STATUS_API_ERROR
+        return STATUS_UNKNOWN_ERROR
+
+    async def _perform_update(self) -> YorkshireWaterCoordinatorData:
         """Refresh data, preferring silent renewal over a browser login.
 
         Flow:
@@ -449,10 +541,14 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
                     )
                 except BridgeUnreachableError as err:
                     # The stealth-browser add-on is not running / not
-                    # reachable. ConfigEntryNotReady so HA retries setup
-                    # on its own backoff schedule once the add-on comes
-                    # back.
-                    raise ConfigEntryNotReady(str(err)) from err
+                    # reachable. This is a failed poll, not a setup-time
+                    # condition (bootstrap and scheduled refreshes both
+                    # route through here), so surface UpdateFailed and let
+                    # the next scheduled fire retry. `_classify` maps the
+                    # cause to the `bridge_unreachable` status.
+                    raise UpdateFailed(
+                        f"Browser bridge unreachable (will retry): {err}",
+                    ) from err
                 except BridgeLoginError as err:
                     # Treat as a transient failure rather than triggering
                     # reauth. Most causes of "login failed" here are
@@ -482,6 +578,26 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
         # Outside the auth lock: backfill long-term statistics.
         await self._import_statistics(snapshot)
         return snapshot
+
+    @property
+    def last_success_time(self) -> datetime | None:
+        """UTC time of our last successful poll, or None until the first."""
+        return self._last_success_time
+
+    @property
+    def last_attempt_time(self) -> datetime | None:
+        """UTC time we last attempted a poll, success or failure."""
+        return self._last_attempt_time
+
+    @property
+    def update_status(self) -> str:
+        """Stable status enum for the last poll (see const.UPDATE_STATUSES)."""
+        return self._status
+
+    @property
+    def last_error(self) -> str | None:
+        """Short text of the last failure, or None when healthy / no attempt."""
+        return self._last_error
 
     async def _import_statistics(
         self,

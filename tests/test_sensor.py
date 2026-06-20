@@ -217,6 +217,153 @@ async def test_clear_deprecated_statistics_purges_orphans(
     recorder.async_clear_statistics.assert_not_called()
 
 
+# Entry-level health entities are keyed on the domain, not the account.
+_LAST_UPDATE = "sensor.yorkshire_water_last_update"
+_UPDATE_STATUS = "sensor.yorkshire_water_last_update_status"
+_UPDATE_PROBLEM = "binary_sensor.yorkshire_water_update_problem"
+
+
+async def test_health_entities_present_and_healthy(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """After a successful poll the health diagnostics read 'all good'."""
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # "Last update" (last attempt) is populated with a real timestamp.
+    last_update = hass.states.get(_LAST_UPDATE)
+    assert last_update is not None
+    assert last_update.state not in (STATE_UNAVAILABLE, "unknown")
+
+    # Status is the OK enum value; no error in the attribute.
+    status = hass.states.get(_UPDATE_STATUS)
+    assert status is not None
+    assert status.state == "ok"
+    assert status.attributes.get("last_error") is None
+    assert status.attributes.get("last_successful_update") is not None
+
+    # Problem off when the last poll worked.
+    problem = hass.states.get(_UPDATE_PROBLEM)
+    assert problem is not None
+    assert problem.state == "off"
+
+
+async def test_real_refresh_failure_flips_health_and_hides_sensors(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """A genuine async_refresh() failure flips status/problem via the real
+    coordinator path, marks normal sensors unavailable, and keeps the
+    health entities available."""
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    from pyyorkshirewater import YorkshireWaterAPIError
+
+    coordinator = entry.runtime_data.coordinator
+    first_attempt = coordinator.last_attempt_time
+    mock_client_live.get_meter_details.side_effect = YorkshireWaterAPIError("boom")
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert coordinator.last_update_success is False
+    problem = hass.states.get(_UPDATE_PROBLEM)
+    assert problem is not None
+    assert problem.state == "on"
+    assert problem.attributes.get("status") == "api_error"
+    assert "boom" in (problem.attributes.get("last_error") or "")
+
+    status = hass.states.get(_UPDATE_STATUS)
+    assert status is not None
+    assert status.state == "api_error"
+
+    # last_update advanced to the failed attempt; entity stays available.
+    last_update = hass.states.get(_LAST_UPDATE)
+    assert last_update is not None
+    assert last_update.state != STATE_UNAVAILABLE
+    assert coordinator.last_attempt_time != first_attempt
+
+    # A normal coordinator sensor goes unavailable on failure.
+    month = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_this_month")
+    assert month is not None
+    assert month.state == STATE_UNAVAILABLE
+
+
+async def test_repeated_failure_updates_health(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """A second consecutive failure still updates the diagnostics, even
+    though HA suppresses its own listener notification on repeats."""
+    from pyyorkshirewater import YorkshireWaterAPIError
+
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = entry.runtime_data.coordinator
+
+    mock_client_live.get_meter_details.side_effect = YorkshireWaterAPIError("first")
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    assert "first" in (hass.states.get(_UPDATE_PROBLEM).attributes["last_error"])
+
+    mock_client_live.get_meter_details.side_effect = YorkshireWaterAPIError("second")
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+    problem = hass.states.get(_UPDATE_PROBLEM)
+    assert problem.state == "on"
+    assert "second" in (problem.attributes["last_error"])
+
+
+async def test_classify_maps_exceptions_to_status() -> None:
+    """The status classifier maps known causes to stable enum values."""
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+    from pyyorkshirewater import CookieSessionExpiredError
+
+    from custom_components.yorkshire_water.bridge_auth import (
+        BridgeLoginError,
+        BridgeUnreachableError,
+    )
+    from custom_components.yorkshire_water.coordinator import (
+        YorkshireWaterCoordinator,
+    )
+
+    classify = YorkshireWaterCoordinator._classify
+    assert classify(UpdateFailed("api boom")) == "api_error"
+    wrapped_bridge = UpdateFailed("x")
+    wrapped_bridge.__cause__ = BridgeUnreachableError("down")
+    assert classify(wrapped_bridge) == "bridge_unreachable"
+    wrapped_login = UpdateFailed("x")
+    wrapped_login.__cause__ = BridgeLoginError("nope")
+    assert classify(wrapped_login) == "login_failed"
+    wrapped_cookie = UpdateFailed("x")
+    wrapped_cookie.__cause__ = CookieSessionExpiredError("expired")
+    assert classify(wrapped_cookie) == "login_failed"
+    assert classify(RuntimeError("?")) == "unknown_error"
+
+
+async def test_latest_daily_reading_date_uses_real_point(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """'Latest daily reading date' reflects the newest real daily point
+    (a date), not YW's forward-running latest_data_date marker."""
+    from homeassistant.util import dt as dt_util
+
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    reading_date = hass.states.get(f"sensor.{PROPERTY_SLUG}_last_reading_time")
+    assert reading_date is not None
+    # The fixture's freshest real point is "today"; DATE sensors render
+    # as an ISO date string.
+    assert reading_date.state == dt_util.now().date().isoformat()
+
+
 async def test_clear_deprecated_statistics_keeps_flow_rate(
     hass: HomeAssistant,
 ) -> None:

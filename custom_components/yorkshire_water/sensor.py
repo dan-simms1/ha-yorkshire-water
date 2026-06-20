@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from homeassistant.components.sensor import (
@@ -36,8 +36,9 @@ from .const import (
     ATTR_LAST_UPDATED,
     ATTR_METER_REFERENCE,
     ATTR_METER_STATUS,
+    UPDATE_STATUSES,
 )
-from .entity import YorkshireWaterEntity
+from .entity import YorkshireWaterEntity, YorkshireWaterEntryEntity
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -109,24 +110,27 @@ def _meter_reference(data: PropertyData) -> str | None:
     return data.meter_details.meter_reference
 
 
-def _last_reading_time(data: PropertyData) -> datetime | None:
-    """Return the date Yorkshire Water last read the meter (date only)."""
-    if data.current_consumption and data.current_consumption.latest_data_date:
-        d = data.current_consumption.latest_data_date
-        return datetime(d.year, d.month, d.day, tzinfo=UTC)
+def _latest_reading_date(data: PropertyData) -> date | None:
+    """Return the date of the newest REAL daily reading we have.
+
+    Sourced from the daily breakdown (`_latest_point`), NOT YW's
+    `latest_data_date` marker. YW's marker runs ~1 day ahead of the
+    published daily total, so it would claim a date we have no
+    consumption figure for. This returns the honest "newest data we
+    actually hold" date, matching `latest_daily_consumption`'s
+    reading_date.
+    """
     point = _latest_point(data)
-    if point is None:
+    if point is None or point.point_date is None:
         return None
-    d = point.point_date
-    return datetime(d.year, d.month, d.day, tzinfo=UTC)
+    return point.point_date
 
 
-def _last_update_time(data: PropertyData) -> datetime | None:
-    """Return when YW's aggregation pipeline last refreshed the summary."""
+def _yw_data_refreshed(data: PropertyData) -> date | None:
+    """Return the date YW's systems last refreshed this account (YW's clock)."""
     if not data.current_consumption or not data.current_consumption.latest_update_date:
         return None
-    d = data.current_consumption.latest_update_date
-    return datetime(d.year, d.month, d.day, tzinfo=UTC)
+    return data.current_consumption.latest_update_date
 
 
 def _latest_daily_consumption(data: PropertyData) -> float | None:
@@ -264,21 +268,28 @@ SENSORS: tuple[YorkshireWaterSensorEntityDescription, ...] = (
         value_fn=_ytd_total_cost,
         available_fn=_has_yearly,
     ),
-    # Diagnostics
+    # Date diagnostics (DATE, not midnight-UTC TIMESTAMP):
+    #   - "Latest daily reading date": the date of the newest REAL daily
+    #     reading we hold (matches Latest daily consumption's
+    #     reading_date). This is the honest "newest data" date.
+    #   - "YW data refreshed": when YW's systems last rebuilt the summary
+    #     (YW's clock, not ours). YW's raw latest_data_date marker, which
+    #     runs ~1 day ahead of real data, is exposed only as an attribute
+    #     on Latest daily consumption to avoid implying data we lack.
     YorkshireWaterSensorEntityDescription(
         key="last_reading_time",
         translation_key="last_reading_time",
-        name="Last YW reading date",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=_last_reading_time,
-        available_fn=_live_only,
+        name="Latest daily reading date",
+        device_class=SensorDeviceClass.DATE,
+        value_fn=_latest_reading_date,
+        available_fn=_has_daily,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
     YorkshireWaterSensorEntityDescription(
         key="last_update_time",
-        name="Last update time",
-        device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=_last_update_time,
+        name="YW data refreshed",
+        device_class=SensorDeviceClass.DATE,
+        value_fn=_yw_data_refreshed,
         available_fn=_live_only,
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
@@ -337,6 +348,11 @@ async def async_setup_entry(
             entities.append(
                 YorkshireWaterMeterStatusSensor(coordinator, property_data),
             )
+    # Integration-health diagnostics live on the entry-level device, so
+    # they exist exactly once and even before any property data has been
+    # fetched (e.g. a failed first bootstrap).
+    entities.append(YorkshireWaterLastUpdateSensor(coordinator))
+    entities.append(YorkshireWaterUpdateStatusSensor(coordinator))
     async_add_entities(entities)
 
 
@@ -473,5 +489,90 @@ class YorkshireWaterSensor(YorkshireWaterEntity, SensorEntity):
                 attrs["reading_date"] = point.point_date.isoformat()
                 attrs["cost"] = point.total_cost
                 attrs["lag_days"] = (dt_util.now().date() - point.point_date).days
+            # YW's own freshness marker, which typically runs ~1 day
+            # ahead of the newest published daily total above. Exposed
+            # here (not as its own sensor) so it cannot be misread as
+            # "the date of our newest reading".
+            if (
+                snapshot.current_consumption is not None
+                and snapshot.current_consumption.latest_data_date is not None
+            ):
+                attrs["yw_latest_data_date"] = (
+                    snapshot.current_consumption.latest_data_date.isoformat()
+                )
         attrs[ATTR_LAST_UPDATED] = datetime.now(UTC).isoformat()
         return attrs
+
+
+# Cap an error string to HA's state-length limit with room to spare.
+_MAX_ERROR_LEN = 250
+
+
+class YorkshireWaterLastUpdateSensor(YorkshireWaterEntryEntity, SensorEntity):
+    """When the integration last RAN a poll (succeeded or failed).
+
+    This is the integration's own clock, distinct from the YW-side date
+    sensors. It updates on every attempt, so it answers "is the addon
+    still running, and when did it last try?". Always available.
+    """
+
+    _attr_translation_key = "last_update"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: YorkshireWaterCoordinator) -> None:
+        """Bind to the entry-level health device."""
+        super().__init__(coordinator, key="last_update")
+
+    @property
+    def available(self) -> bool:
+        """Always available - it is a health readout, not meter data."""
+        return True
+
+    @property
+    def native_value(self) -> datetime | None:
+        """UTC time of the last poll attempt, or None before the first."""
+        return self.coordinator.last_attempt_time
+
+
+class YorkshireWaterUpdateStatusSensor(YorkshireWaterEntryEntity, SensorEntity):
+    """The outcome of the last poll as a stable status enum.
+
+    State is one of `const.UPDATE_STATUSES` (`ok`, `login_failed`,
+    `bridge_unreachable`, `api_error`, `unknown_error`, `no_attempt`) -
+    low-cardinality so it is history- and automation-friendly. The raw
+    short error text is exposed as a `last_error` attribute, never as
+    the state. `no_attempt` until the first real poll, so a cache
+    restore does not read as `ok`.
+    """
+
+    _attr_translation_key = "last_update_status"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options: ClassVar[list[str]] = list(UPDATE_STATUSES)
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: YorkshireWaterCoordinator) -> None:
+        """Bind to the entry-level health device."""
+        super().__init__(coordinator, key="last_update_status")
+
+    @property
+    def available(self) -> bool:
+        """Always available so the status survives a failing poll."""
+        return True
+
+    @property
+    def native_value(self) -> str:
+        """The current update-status enum value."""
+        return self.coordinator.update_status
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | None]:
+        """Surface the short error text and the last successful poll time."""
+        last_success = self.coordinator.last_success_time
+        err = self.coordinator.last_error
+        return {
+            "last_error": err[:_MAX_ERROR_LEN] if err else None,
+            "last_successful_update": (
+                last_success.isoformat() if last_success is not None else None
+            ),
+        }

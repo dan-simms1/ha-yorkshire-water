@@ -62,7 +62,21 @@
     "entity": {
         "sensor": {
             "last_reading_time": {
-                "name": "Last YW reading date"
+                "name": "Latest daily reading date"
+            },
+            "last_update": {
+                "name": "Last update"
+            },
+            "last_update_status": {
+                "name": "Last update status",
+                "state": {
+                    "ok": "OK",
+                    "no_attempt": "No attempt yet",
+                    "login_failed": "Login failed",
+                    "bridge_unreachable": "Browser add-on unreachable",
+                    "api_error": "API error",
+                    "unknown_error": "Unknown error"
+                }
             },
             "meter_reference": {
                 "name": "Meter reference"
@@ -82,6 +96,9 @@
             },
             "meter_active": {
                 "name": "Meter active"
+            },
+            "update_problem": {
+                "name": "Update problem"
             }
         },
         "button": {

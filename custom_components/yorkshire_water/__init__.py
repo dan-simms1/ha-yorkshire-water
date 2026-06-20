@@ -484,8 +484,10 @@ async def async_unload_entry(
 ) -> bool:
     """Unload a config entry."""
     coordinator = entry.runtime_data.coordinator
-    coordinator.cancel_scheduled_refreshes()
-    coordinator.cancel_heartbeat()
+    # Full shutdown (sets the closing flag, cancels the schedule and
+    # heartbeat) so a refresh sleeping through its jitter cannot fire on
+    # this now-dead coordinator after the entry is reloaded.
+    await coordinator.async_shutdown()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 

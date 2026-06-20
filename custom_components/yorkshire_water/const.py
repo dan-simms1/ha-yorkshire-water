@@ -93,3 +93,21 @@ ATTR_METER_REFERENCE: Final = "meter_reference"
 ATTR_METER_STATUS: Final = "meter_status"
 ATTR_ALARM_DETAILS: Final = "alarm_details"
 ATTR_LAST_UPDATED: Final = "last_updated"
+
+# Integration update-status enum (the "Last update status" sensor). Fixed,
+# low-cardinality options so the state is history- and automation-friendly;
+# the raw error text lives in an attribute, never the state.
+STATUS_OK: Final = "ok"
+STATUS_NO_ATTEMPT: Final = "no_attempt"
+STATUS_LOGIN_FAILED: Final = "login_failed"
+STATUS_BRIDGE_UNREACHABLE: Final = "bridge_unreachable"
+STATUS_API_ERROR: Final = "api_error"
+STATUS_UNKNOWN_ERROR: Final = "unknown_error"
+UPDATE_STATUSES: Final = (
+    STATUS_OK,
+    STATUS_NO_ATTEMPT,
+    STATUS_LOGIN_FAILED,
+    STATUS_BRIDGE_UNREACHABLE,
+    STATUS_API_ERROR,
+    STATUS_UNKNOWN_ERROR,
+)

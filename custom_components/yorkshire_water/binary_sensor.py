@@ -14,8 +14,8 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.const import EntityCategory
 from pyyorkshirewater import MeterStatus
 
-from .const import ATTR_ALARM_DETAILS
-from .entity import YorkshireWaterEntity
+from .const import ATTR_ALARM_DETAILS, STATUS_NO_ATTEMPT, STATUS_OK
+from .entity import YorkshireWaterEntity, YorkshireWaterEntryEntity
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
@@ -85,13 +85,16 @@ async def async_setup_entry(
     """Register binary sensor entities per property."""
     coordinator = entry.runtime_data.coordinator
     data = coordinator.data
-    entities: list[YorkshireWaterBinarySensor] = []
+    entities: list[BinarySensorEntity] = []
     if data is not None:
         for property_data in data.properties:
             for desc in BINARY_SENSORS:
                 entities.append(
                     YorkshireWaterBinarySensor(coordinator, property_data, desc),
                 )
+    # Account-wide health problem on the entry-level device, created once
+    # and present even before any property data exists.
+    entities.append(YorkshireWaterUpdateProblemBinarySensor(coordinator))
     async_add_entities(entities)
 
 
@@ -146,4 +149,57 @@ class YorkshireWaterBinarySensor(YorkshireWaterEntity, BinarySensorEntity):
                 alarm.raw
                 for alarm in snapshot.current_consumption.continuous_flow_alarm_details
             ],
+        }
+
+
+# Cap the surfaced error string well under HA's attribute expectations.
+_MAX_ERROR_LEN = 250
+
+
+class YorkshireWaterUpdateProblemBinarySensor(
+    YorkshireWaterEntryEntity, BinarySensorEntity,
+):
+    """On when the last poll failed; off when healthy or not yet run.
+
+    Reads the coordinator's OWN status (updated on every attempt,
+    including repeated failures HA would otherwise not re-notify), not
+    HA's `last_update_success`. Bound to the entry-level device and
+    always available, so it stays visible during the very failure it
+    reports. Failure reason and timing are exposed as attributes for
+    triage and automations.
+    """
+
+    _attr_translation_key = "update_problem"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: YorkshireWaterCoordinator) -> None:
+        """Bind to the entry-level health device."""
+        super().__init__(coordinator, key="update_problem")
+
+    @property
+    def available(self) -> bool:
+        """Always available - it must report the failure that hides others."""
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        """True when the last poll attempt failed (ok / no_attempt are off)."""
+        return self.coordinator.update_status not in (STATUS_OK, STATUS_NO_ATTEMPT)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | None]:
+        """Surface the failure reason and the last success / attempt times."""
+        err = self.coordinator.last_error
+        last_success = self.coordinator.last_success_time
+        last_attempt = self.coordinator.last_attempt_time
+        return {
+            "status": self.coordinator.update_status,
+            "last_error": err[:_MAX_ERROR_LEN] if err else None,
+            "last_successful_update": (
+                last_success.isoformat() if last_success is not None else None
+            ),
+            "last_attempt": (
+                last_attempt.isoformat() if last_attempt is not None else None
+            ),
         }

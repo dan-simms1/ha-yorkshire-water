@@ -248,8 +248,8 @@ sensors. The live entities are limited to genuinely-current values:
 | Cost year to date | sensor | Year-to-date total charge |
 | Continuous flow rate | sensor | Leak-detection flow rate in litres/hour (0 when no leak) |
 | Continuous flow cost per day | sensor | Projected daily cost of a detected leak (0 when no leak) |
-| Last YW reading date | sensor | Diagnostic; the date Yorkshire Water last read the meter (date only) |
-| Last update time | sensor | Diagnostic; when YW last refreshed their summary |
+| Latest daily reading date | sensor | Diagnostic (date); the date of the newest real daily reading we hold (matches Latest daily consumption's `reading_date`). YW's forward-running freshness marker, which sits ~1 day ahead, is the `yw_latest_data_date` attribute on Latest daily consumption. |
+| YW data refreshed | sensor | Diagnostic (date); when YW's own systems last refreshed this account. YW's clock, not ours. |
 | Meter reference | sensor | Diagnostic; the meter identifier |
 | Meter status | sensor | Always available. One of *No meter installed*, *Awaiting activation by Yorkshire Water*, *Live*. |
 | Continuous flow alarm | binary sensor | Yorkshire Water's leak alert |
@@ -261,6 +261,19 @@ or cumulative live sensor. YW's daily data is batch and lags ~2 days,
 so a live sensor stamped at poll time would be stale or unavailable;
 the correct home for dated daily/monthly figures is long-term
 statistics.
+
+### Integration health
+
+A separate account-level **Yorkshire Water** device carries the
+integration's own health, so you can see at a glance whether polling is
+working (these are about the addon, not the meter). They are always
+available, even while a poll is failing.
+
+| Entity | Type | Notes |
+|---|---|---|
+| Last update | sensor | When the integration last *ran* a poll (timestamp), success or failure. |
+| Last update status | sensor | Enum: `ok`, `login_failed`, `bridge_unreachable`, `api_error`, `unknown_error`, or `no_attempt` (until the first poll). The short error text is in the `last_error` attribute. |
+| Update problem | binary sensor | Problem; on when the last poll failed. Attributes carry `status`, `last_error`, `last_successful_update` and `last_attempt`. |
 
 ## Charts and the Energy Dashboard
 

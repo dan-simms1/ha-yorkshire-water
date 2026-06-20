@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.button import ButtonEntity
 from homeassistant.components.sensor import SensorEntity
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DEVICE_MODEL, DOMAIN, MANUFACTURER
@@ -107,3 +107,42 @@ class YorkshireWaterEntity(CoordinatorEntity["YorkshireWaterCoordinator"]):
             ):
                 return snapshot
         return None
+
+
+class YorkshireWaterEntryEntity(CoordinatorEntity["YorkshireWaterCoordinator"]):
+    """Base for integration-level (per config entry) entities.
+
+    Bound to a single service device representing the whole account, not
+    a property. Used for the integration-health diagnostics, which are
+    account-wide (one poll covers every property) and must exist even
+    before any property data has been fetched - e.g. when the first
+    bootstrap poll fails. Keying the device on the entry id (not the
+    account reference) means these entities never carry the home address
+    and are available regardless of fetch state.
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: YorkshireWaterCoordinator,
+        *,
+        key: str,
+    ) -> None:
+        """Wire the entry-level service device onto the entity."""
+        super().__init__(coordinator)
+        entry_id = coordinator.entry.entry_id
+        self._attr_unique_id = f"{entry_id}_{key}"
+        # Clean, address-free entity_id. HA disambiguates a second entry
+        # with a numeric suffix.
+        domain = _platform_domain(self)
+        if domain:
+            self.entity_id = f"{domain}.yorkshire_water_{key}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{entry_id}_account")},
+            manufacturer=MANUFACTURER,
+            model="Account",
+            name="Yorkshire Water",
+            entry_type=DeviceEntryType.SERVICE,
+            configuration_url="https://my.yorkshirewater.com",
+        )
