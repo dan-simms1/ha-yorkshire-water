@@ -272,8 +272,8 @@ poll is failing.
 
 | Entity | Type | Notes |
 |---|---|---|
-| Customer name | sensor | The account holder. Email, phone and title ride as attributes (kept out of the state to limit PII in history). |
-| Account number | sensor | The customer / account number, grouped as printed on the bill. Blank for multi-property accounts where each property has its own reference (those are on each meter device). |
+| Customer name | sensor | The account holder. Email, phone and title ride as attributes (note: HA records attributes, so they are in the recorder like any other). |
+| Account number | sensor | The customer / account number, grouped as printed on the bill. Shown for single-property accounts; blank for multi-property accounts, whose per-property references live on each meter device. |
 | Last update | sensor | When the integration last *ran* a poll (timestamp), success or failure. |
 | Update status | sensor | Enum: `ok`, `login_failed`, `bridge_unreachable`, `api_error`, `unknown_error`, or `no_attempt` (until the first poll). The short error text is in the `last_error` attribute, and the last good poll time in `last_successful_update`. Automate on `state != 'ok'`. |
 | Refresh now | button | Manually queue an immediate refresh (covers every property). Always available - it is the recovery path out of a stuck state. |

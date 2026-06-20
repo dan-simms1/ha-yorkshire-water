@@ -266,6 +266,88 @@ async def test_account_identity_sensors(
     assert number.state == "1234 5678 9012 345 6"
 
 
+async def test_account_number_blank_for_multi_property(
+    hass: HomeAssistant,
+) -> None:
+    """A multi-property account has no single account number."""
+    from pyyorkshirewater import Property
+
+    from .conftest import make_mock_client
+
+    props = [
+        Property.from_api({
+            "accountReference": "A", "displayAccountReference": "1234567890123456",
+            "accountStatus": "Live",
+            "address": {"houseNumber": "1", "addressLine1": "A St",
+                        "postcode": "EX1 1EX"},
+        }),
+        Property.from_api({
+            "accountReference": "B", "displayAccountReference": "6543210987654321",
+            "accountStatus": "Live",
+            "address": {"houseNumber": "2", "addressLine1": "B St",
+                        "postcode": "EX2 2EX"},
+        }),
+    ]
+    client = make_mock_client(properties=props)
+    with patch(
+        "custom_components.yorkshire_water.coordinator.YorkshireWaterClient",
+        return_value=client,
+    ):
+        entry = _entry(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    number = hass.states.get("sensor.yorkshire_water_account_number")
+    assert number is not None
+    assert number.state in ("unknown", STATE_UNAVAILABLE)
+
+
+async def test_remove_entry_cleans_account_hub(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """Removing the integration deletes the account hub device."""
+    from homeassistant.helpers import device_registry as dr
+
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    dev_reg = dr.async_get(hass)
+    assert dev_reg.async_get_device(
+        identifiers={(DOMAIN, f"{entry.entry_id}_account")},
+    ) is not None
+
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert dev_reg.async_get_device(
+        identifiers={(DOMAIN, f"{entry.entry_id}_account")},
+    ) is None
+
+
+async def test_legacy_property_button_removed_even_without_data(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """A pre-existing per-property refresh button is removed on setup,
+    via the registry sweep that does not depend on a snapshot."""
+    ent_reg = er.async_get(hass)
+    entry = _entry(hass)
+    ent_reg.async_get_or_create(
+        "button", DOMAIN, f"{PROPERTY_SLUG}_refresh_now", config_entry=entry,
+    )
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Old per-property button gone; the account-level one exists.
+    assert ent_reg.async_get_entity_id(
+        "button", DOMAIN, f"{PROPERTY_SLUG}_refresh_now",
+    ) is None
+    assert ent_reg.async_get_entity_id(
+        "button", DOMAIN, f"{entry.entry_id}_refresh_now",
+    ) is not None
+
+
 async def test_account_device_is_hub_with_button(
     hass: HomeAssistant,
     mock_client_live: MagicMock,

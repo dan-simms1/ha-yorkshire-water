@@ -147,5 +147,3 @@ class YorkshireWaterBinarySensor(YorkshireWaterEntity, BinarySensorEntity):
                 for alarm in snapshot.current_consumption.continuous_flow_alarm_details
             ],
         }
-
-

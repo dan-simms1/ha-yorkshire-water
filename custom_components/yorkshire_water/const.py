@@ -94,7 +94,7 @@ ATTR_METER_STATUS: Final = "meter_status"
 ATTR_ALARM_DETAILS: Final = "alarm_details"
 ATTR_LAST_UPDATED: Final = "last_updated"
 
-# Integration update-status enum (the "Last update status" sensor). Fixed,
+# Integration update-status enum (the "Update status" sensor). Fixed,
 # low-cardinality options so the state is history- and automation-friendly;
 # the raw error text lives in an attribute, never the state.
 STATUS_OK: Final = "ok"

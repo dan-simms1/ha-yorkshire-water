@@ -586,8 +586,9 @@ class YorkshireWaterCustomerNameSensor(YorkshireWaterEntryEntity, SensorEntity):
     """The account holder's name, account-generic so it lives here.
 
     Contact details (email, phone, title) ride as attributes rather than
-    their own sensors, to keep low-value PII out of the state machine
-    and recorder while still being visible on the entity.
+    as their own sensors - fewer entities for low-value fields. Note HA
+    still records attributes, so these contact details do land in the
+    recorder like any other attribute.
     """
 
     _attr_translation_key = "customer_name"
@@ -642,15 +643,14 @@ class YorkshireWaterAccountNumberSensor(YorkshireWaterEntryEntity, SensorEntity)
 
     @property
     def native_value(self) -> str | None:
-        """The bill-grouped account number when unambiguous, else None."""
+        """The bill-grouped account number for a single-property account.
+
+        Multi-property accounts have a distinct reference per property
+        (carried on each meter device), so there is no single account
+        number to show - return None rather than pick one arbitrarily.
+        """
         data = self.coordinator.data
-        if data is None:
+        if data is None or len(data.properties) != 1:
             return None
-        refs = {
-            prop.property.display_account_reference
-            for prop in data.properties
-            if prop.property.display_account_reference
-        }
-        if len(refs) == 1:
-            return format_account_number(next(iter(refs)))
-        return None
+        ref = data.properties[0].property.display_account_reference
+        return format_account_number(ref) if ref else None

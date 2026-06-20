@@ -102,9 +102,6 @@
             },
             "meter_active": {
                 "name": "Meter active"
-            },
-            "update_problem": {
-                "name": "Update problem"
             }
         },
         "button": {

@@ -398,7 +398,11 @@ def _drop_deprecated_entry_entities(
     hass: HomeAssistant,
     entry: YorkshireWaterConfigEntry,
 ) -> None:
-    """Remove orphaned entry-level entities from earlier versions."""
+    """Remove orphaned entry-level entities from earlier versions.
+
+    Runs unconditionally (not gated on coordinator data) so it works
+    even after a failed first bootstrap with no cache.
+    """
     ent_reg = er.async_get(hass)
     for platform, key in _DEPRECATED_ENTRY_ENTITIES:
         entity_id = ent_reg.async_get_entity_id(
@@ -407,6 +411,25 @@ def _drop_deprecated_entry_entities(
         if entity_id:
             LOGGER.info("Removing deprecated YW entry-level entity %s", entity_id)
             ent_reg.async_remove(entity_id)
+
+    # The Refresh button moved from each per-property device to the
+    # account-level device in v3.1.2. The old per-property buttons had
+    # unique_id `{display_ref}_refresh_now`; the new one is
+    # `{entry_id}_refresh_now`. Remove any button that ends `_refresh_now`
+    # but is not the current entry-level one. Keyed off the registry (not
+    # the snapshot) so it also fires when the first poll failed.
+    current = f"{entry.entry_id}_refresh_now"
+    for reg_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        if (
+            reg_entry.domain == "button"
+            and reg_entry.unique_id.endswith("_refresh_now")
+            and reg_entry.unique_id != current
+        ):
+            LOGGER.info(
+                "Removing deprecated YW per-property button %s",
+                reg_entry.entity_id,
+            )
+            ent_reg.async_remove(reg_entry.entity_id)
 
 
 def _drop_deprecated_entities(
@@ -434,14 +457,6 @@ def _drop_deprecated_entities(
                     unique_id,
                 )
                 ent_reg.async_remove(entity_id)
-        # The Refresh button moved from the per-property device to the
-        # account-level device in v3.1.2; drop the old per-property one.
-        old_button = ent_reg.async_get_entity_id(
-            "button", DOMAIN, f"{display_ref}_refresh_now",
-        )
-        if old_button:
-            LOGGER.info("Removing deprecated YW per-property button %s", old_button)
-            ent_reg.async_remove(old_button)
 
 
 def _clear_deprecated_statistics(
