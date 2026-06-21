@@ -266,6 +266,35 @@ async def test_account_identity_sensors(
     assert number.state == "1234 5678 9012 345 6"
 
 
+async def test_daily_carried_forward_when_feed_empty(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """When YW's daily feed returns nothing, the Latest daily sensors hold
+    the last-known reading instead of flapping to unavailable."""
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    first = hass.states.get(f"sensor.{PROPERTY_SLUG}_latest_daily_consumption")
+    assert first is not None
+    assert first.state == "78.0"  # freshest fixture point
+
+    # Next poll: YW returns an empty daily breakdown.
+    mock_client_live.get_daily_consumption.return_value = []
+    coordinator = entry.runtime_data.coordinator
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    held = hass.states.get(f"sensor.{PROPERTY_SLUG}_latest_daily_consumption")
+    assert held is not None
+    assert held.state != STATE_UNAVAILABLE
+    assert held.state == "78.0"  # last-known value retained
+    reading_date = hass.states.get(f"sensor.{PROPERTY_SLUG}_last_reading_time")
+    assert reading_date is not None
+    assert reading_date.state != STATE_UNAVAILABLE
+
+
 async def test_account_number_blank_for_multi_property(
     hass: HomeAssistant,
 ) -> None:

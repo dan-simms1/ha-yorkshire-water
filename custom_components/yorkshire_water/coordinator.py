@@ -800,6 +800,23 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
                 LOGGER.debug("yearly-consumption fetch failed for %s: %s",
                              prop.display_account_reference, err)
 
+        # Daily-feed gap resilience: YW's daily-consumption endpoint
+        # intermittently returns nothing even when the rest of the poll
+        # succeeds. Rather than flapping the "Latest daily" sensors to
+        # unavailable, carry forward the last good daily points for this
+        # property from the previous snapshot. The reading keeps its real
+        # date, so its lag_days simply grows to signal staleness, and the
+        # next poll with real data overwrites it.
+        if not _has_real_daily_point(daily):
+            previous = self._previous_daily_points(prop.display_account_reference)
+            if previous:
+                LOGGER.debug(
+                    "Daily feed empty for %s; carrying forward %d prior daily points",
+                    prop.display_account_reference,
+                    len(previous),
+                )
+                daily = previous
+
         return PropertyData(
             property=prop,
             meter_status=meter_status,
@@ -809,6 +826,26 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
             daily_points=daily,
             yearly_consumption=yearly,
         )
+
+    def _previous_daily_points(self, account_ref: str | None) -> list[Any]:
+        """Daily points from the last snapshot for this property, if any."""
+        data = self.data
+        if data is None or not account_ref:
+            return []
+        for prop_data in data.properties:
+            if prop_data.property.display_account_reference == account_ref:
+                return list(prop_data.daily_points or [])
+        return []
+
+
+def _has_real_daily_point(points: list[Any]) -> bool:
+    """True if any daily point is a real reading (dated, present, not missing)."""
+    return any(
+        getattr(p, "point_date", None) is not None
+        and not getattr(p, "is_missing", False)
+        and p.total_consumption_litres is not None
+        for p in points
+    )
 
 
 def _derive_meter_status(

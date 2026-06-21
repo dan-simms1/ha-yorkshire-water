@@ -239,7 +239,7 @@ sensors. The live entities are limited to genuinely-current values:
 
 | Entity | Type | Notes |
 |---|---|---|
-| Latest daily consumption | sensor | Diagnostic; the freshest daily total YW has delivered, in litres. Attributes carry its `reading_date`, `cost` and `lag_days`. Not recorded into statistics. |
+| Latest daily consumption | sensor | Diagnostic; the freshest daily total YW has delivered, in litres. Attributes carry its `reading_date`, `cost` and `lag_days`. Not recorded into statistics. YW's daily feed is intermittent, so when a poll returns no daily data the sensor holds the last-known reading (with a growing `lag_days`) rather than dropping to unavailable. |
 | Consumption this month | sensor | Month-to-date consumption in litres |
 | Clean water cost this month | sensor | Month-to-date clean-water charge |
 | Sewerage cost this month | sensor | Month-to-date sewerage charge |
