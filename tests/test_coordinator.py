@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pyyorkshirewater import MeterStatus, YorkshireWaterAPIError
+from pyyorkshirewater import MeterDetails, MeterStatus, YorkshireWaterAPIError
 
 from custom_components.yorkshire_water.bridge_auth import (
     BridgeLoginError,
@@ -137,3 +137,36 @@ async def test_api_error_during_refresh_marks_unavailable(
     await coordinator.async_refresh()
 
     assert coordinator.last_update_success is False
+
+
+async def test_daily_fetch_survives_meter_details_without_start_date(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """A meter-details payload with no `startDate` must not mute the daily feed.
+
+    Around 2026-08-25 YW's scoped meter-details response stopped carrying
+    `startDate`, and the daily-consumption fetch was gated on it. Every
+    other endpoint kept working, so the integration looked healthy while
+    the daily statistics silently stopped advancing. The fetch now falls
+    back to the window start for `moveInDate`.
+    """
+    mock_client_live.get_meter_details.return_value = MeterDetails.from_api(
+        {
+            "accountReference": "123456789012345",
+            "meterReference": "WAKE-001",
+            "currentDate": "2026-09-06T00:00:00+00:00",
+        },
+    )
+
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert mock_client_live.get_daily_consumption.await_count >= 1
+    kwargs = mock_client_live.get_daily_consumption.await_args.kwargs
+    assert kwargs["move_in_date"] == kwargs["start_date"]
+    assert kwargs["move_out_date"] == kwargs["end_date"]
+
+    coordinator = entry.runtime_data.coordinator
+    assert coordinator.data.properties[0].daily_points

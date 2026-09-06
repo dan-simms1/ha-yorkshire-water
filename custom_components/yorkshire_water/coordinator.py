@@ -763,27 +763,35 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
                              prop.display_account_reference, err)
             try:
                 # YW requires moveInDate (the customer's account start
-                # date at the property) and moveOutDate. We have both:
-                # the per-property meter-details we just fetched has
-                # the start_date; today is today. Passing them
+                # date at the property) and moveOutDate. Passing them
                 # explicitly avoids depending on the client's cached
                 # meter-details which is only populated when
                 # get_meter_details() is called without an
                 # account_reference scope.
-                if details.start_date is not None:
-                    end = datetime.now().date()
-                    # Fetch a ~5-week window so the daily statistics
-                    # backfill has enough history to fill a 30-day bar
-                    # chart. The "Consumption (last 8 days)" sensor
-                    # filters this list back down to 8 days itself.
-                    start = end - timedelta(days=_DAILY_FETCH_DAYS)
-                    daily = await client.get_daily_consumption(
-                        start_date=start.isoformat(),
-                        end_date=end.isoformat(),
-                        move_in_date=details.start_date.isoformat(),
-                        move_out_date=end.isoformat(),
-                        meter_reference=meter_ref,
-                    )
+                end = datetime.now().date()
+                # Fetch a ~5-week window so the daily statistics
+                # backfill has enough history to fill a 30-day bar
+                # chart. The "Consumption (last 8 days)" sensor
+                # filters this list back down to 8 days itself.
+                start = end - timedelta(days=_DAILY_FETCH_DAYS)
+                # Around 2026-08-25 YW dropped `startDate` from the
+                # scoped meter-details response, leaving only
+                # accountReference / meterReference / currentDate. This
+                # fetch used to be gated on having that date, so the
+                # daily feed went silently dark while every other
+                # endpoint kept working. YW does not validate moveInDate
+                # against the account (verified 2026-09-06: the window
+                # start, the real start date and 2025-01-01 all return
+                # the identical series), so fall back to the window
+                # start and keep the real date when YW does send one.
+                move_in = details.start_date or start
+                daily = await client.get_daily_consumption(
+                    start_date=start.isoformat(),
+                    end_date=end.isoformat(),
+                    move_in_date=move_in.isoformat(),
+                    move_out_date=end.isoformat(),
+                    meter_reference=meter_ref,
+                )
             except (YorkshireWaterAPIError, YorkshireWaterMeterNotReadyError) as err:
                 LOGGER.debug("daily-consumption fetch failed for %s: %s",
                              prop.display_account_reference, err)
