@@ -25,7 +25,6 @@ from pyyorkshirewater import (
     MeterDetails,
     MeterStatus,
     Property,
-    UsagePeriod,
     YearlyConsumption,
 )
 
@@ -131,18 +130,13 @@ async def load_snapshot(
                         if consumption_raw
                         else None
                     ),
-                    usage_periods=[
-                        UsagePeriod.from_api(p)
-                        for p in ps.get("usage_periods", []) or []
-                    ],
                     daily_points=[
                         DailyConsumptionPoint.from_api(p)
                         for p in ps.get("daily_points", []) or []
                     ],
-                    yearly_consumption=(
-                        YearlyConsumption.from_api(ps["yearly_consumption"])
-                        if isinstance(ps.get("yearly_consumption"), dict)
-                        else None
+                    yearly_consumption=_restore_yearly(ps.get("yearly_consumption")),
+                    previous_yearly_consumption=_restore_yearly(
+                        ps.get("previous_yearly_consumption"),
                     ),
                 ),
             )
@@ -178,10 +172,14 @@ async def save_snapshot(
                 "current_consumption": (
                     ps.current_consumption.raw if ps.current_consumption else None
                 ),
-                "usage_periods": [u.raw for u in ps.usage_periods],
                 "daily_points": [p.raw for p in ps.daily_points],
                 "yearly_consumption": (
                     ps.yearly_consumption.raw if ps.yearly_consumption else None
+                ),
+                "previous_yearly_consumption": (
+                    ps.previous_yearly_consumption.raw
+                    if ps.previous_yearly_consumption
+                    else None
                 ),
             }
             for ps in data.properties
@@ -193,6 +191,13 @@ async def save_snapshot(
 async def remove_snapshot(hass: HomeAssistant, entry_id: str) -> None:
     """Drop any persisted snapshot. Called when an entry is removed."""
     await _store(hass, entry_id).async_remove()
+
+
+def _restore_yearly(payload: Any) -> YearlyConsumption | None:
+    """Rebuild a cached yearly summary, or None if absent or yearless."""
+    if not isinstance(payload, dict) or not payload.get("year"):
+        return None
+    return YearlyConsumption.from_api(payload)
 
 
 def _restore_consumption(payload: dict[str, Any]) -> CurrentConsumption:

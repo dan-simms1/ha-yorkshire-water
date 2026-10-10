@@ -75,9 +75,14 @@ async def test_sensors_when_meter_live(
     assert "lag_days" in latest.attributes
     assert latest.attributes.get("state_class") is None
 
-    # Month-to-date total sensor exists (its value depends on the
-    # your-usage payload, which this fixture does not populate).
-    assert hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_this_month") is not None
+    # Month-to-date sensors read the current month from the yearly
+    # breakdown, even though the fixture lists last month first.
+    month = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_this_month")
+    assert month is not None
+    assert float(month.state) == pytest.approx(3584)
+    month_cost = hass.states.get(f"sensor.{PROPERTY_SLUG}_cost_this_month_total")
+    assert month_cost is not None
+    assert float(month_cost.state) == pytest.approx(16.78)
 
     # Meter status still carries the property address attribute.
     meter_status = hass.states.get(f"sensor.{PROPERTY_SLUG}_meter_status")
@@ -536,3 +541,30 @@ async def test_clear_deprecated_statistics_keeps_flow_rate(
 
     cleared = set(recorder.async_clear_statistics.call_args.args[0])
     assert not any("continuous_flow_rate" in sid for sid in cleared)
+
+
+async def test_this_month_unavailable_before_yw_publishes_it(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """Early in a month YW has nothing for it yet. Do not show last month."""
+    from homeassistant.util import dt as dt_util
+    from pyyorkshirewater import YearlyConsumption
+
+    today = dt_util.now().date()
+    other = 12 if today.month == 1 else today.month - 1
+    mock_client_live.get_yearly_consumption.return_value = YearlyConsumption.from_api({
+        "year": today.year,
+        "totalConsumption": 23665,
+        "monthlyConsumption": [
+            {"month": f"{other:02d}", "totalConsumptionLitres": "23665"},
+        ],
+    })
+
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    month = hass.states.get(f"sensor.{PROPERTY_SLUG}_consumption_this_month")
+    assert month is not None
+    assert month.state == STATE_UNAVAILABLE

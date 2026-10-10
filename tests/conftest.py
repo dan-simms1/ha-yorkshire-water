@@ -169,10 +169,30 @@ def _daily_points() -> list[DailyConsumptionPoint]:
 
 
 def _yearly_consumption() -> YearlyConsumption:
+    """Current-year summary whose breakdown lists last month first.
+
+    The current month is deliberately not first so the month-to-date
+    sensors are proven to match on month, not position.
+    """
+    from homeassistant.util import dt as dt_util
+
+    today = dt_util.now().date()
+    months = [
+        {"month": f"{today.month:02d}", "totalConsumptionLitres": "3584",
+         "standardTariffCleanWaterCost": 7.58, "standardTariffSewerageCost": 9.2,
+         "totalCostIncludingSewerage": 16.78},
+    ]
+    if today.month > 1:
+        months.insert(0, {
+            "month": f"{today.month - 1:02d}", "totalConsumptionLitres": "23665",
+            "standardTariffCleanWaterCost": 50.0, "standardTariffSewerageCost": 60.72,
+            "totalCostIncludingSewerage": 110.72,
+        })
     return YearlyConsumption.from_api({
-        "year": 2025,
+        "year": today.year,
         "totalConsumption": 110000,
         "totalCost": 500.0,
+        "monthlyConsumption": months,
     })
 
 
@@ -186,6 +206,7 @@ def make_mock_client(
     """Build a MagicMock standing in for `YorkshireWaterClient`."""
     client = MagicMock()
     client.login = AsyncMock(return_value=None)
+    client.refresh_token = AsyncMock(return_value=None)
     client.get_customer = AsyncMock(return_value=_customer())
     client.iter_properties = AsyncMock(
         return_value=properties if properties is not None else [_property()],
@@ -196,7 +217,6 @@ def make_mock_client(
     client.get_current_consumption = AsyncMock(
         return_value=_current_consumption(live=live, alarm=alarm),
     )
-    client.get_your_usage = AsyncMock(return_value=[])
     client.get_daily_consumption = AsyncMock(return_value=_daily_points())
     client.get_yearly_consumption = AsyncMock(return_value=_yearly_consumption())
     client.close = AsyncMock(return_value=None)

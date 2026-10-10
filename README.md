@@ -37,9 +37,12 @@ Each refresh the integration does three things:
    cookies; only when those cookies have died does it call the
    companion stealth-browser add-on to drive a real Chromium through
    the login form.
-2. Calls the same private API the `my.yorkshirewater.com` SPA uses, in
-   the same order: `meter-details`, `current-consumption`, `your-usage`
-   (monthly), `daily-consumption`, `yearly-consumption`.
+2. Calls the same private API the `my.yorkshirewater.com` SPA uses:
+   `meter-details`, `current-consumption`, `daily-consumption` and
+   `yearly-consumption`. The SPA's `your-usage` call is skipped because
+   it returns the same monthly figures as `yearly-consumption`. In
+   January the previous year is fetched too, so December's late
+   readings still land.
 3. Maps the responses into Home Assistant. A small set of
    current-value sensors (meter status, month-to-date and year-to-date
    totals, the leak-detection sensor) plus four long-term statistics

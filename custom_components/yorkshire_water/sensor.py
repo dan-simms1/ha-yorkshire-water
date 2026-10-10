@@ -29,7 +29,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import EntityCategory, UnitOfVolume
 from homeassistant.util import dt as dt_util
-from pyyorkshirewater import MeterStatus
+from pyyorkshirewater import MeterStatus, UsagePeriod
 
 from .const import (
     ATTR_ALARM_DETAILS,
@@ -92,9 +92,26 @@ def _has_meter(data: PropertyData) -> bool:
     return bool(data.meter_details and data.meter_details.meter_reference)
 
 
+def _current_month(data: PropertyData) -> UsagePeriod | None:
+    """This calendar month's entry in the yearly breakdown, if YW has one.
+
+    Matched on year and month rather than taken by position, so the
+    first days of a month (before YW publishes anything for it) report
+    no data instead of last month's total.
+    """
+    yearly = data.yearly_consumption
+    today = dt_util.now().date()
+    if yearly is None or yearly.year != today.year:
+        return None
+    for period in yearly.monthly_consumption:
+        if period.month and period.month.isdigit() and int(period.month) == today.month:
+            return period
+    return None
+
+
 def _has_usage(data: PropertyData) -> bool:
-    """Available when we have at least the current month's usage summary."""
-    return data.meter_status is MeterStatus.LIVE and bool(data.usage_periods)
+    """Available when YW has published figures for the current month."""
+    return data.meter_status is MeterStatus.LIVE and _current_month(data) is not None
 
 
 def _has_yearly(data: PropertyData) -> bool:
@@ -151,22 +168,23 @@ def _latest_daily_consumption(data: PropertyData) -> float | None:
 
 
 def _this_month_consumption(data: PropertyData) -> float | None:
-    return data.usage_periods[0].total_consumption_litres if data.usage_periods else None
+    month = _current_month(data)
+    return month.total_consumption_litres if month else None
 
 
 def _this_month_clean_cost(data: PropertyData) -> float | None:
-    return data.usage_periods[0].clean_water_cost if data.usage_periods else None
+    month = _current_month(data)
+    return month.clean_water_cost if month else None
 
 
 def _this_month_sewerage_cost(data: PropertyData) -> float | None:
-    return data.usage_periods[0].sewerage_cost if data.usage_periods else None
+    month = _current_month(data)
+    return month.sewerage_cost if month else None
 
 
 def _this_month_total_cost(data: PropertyData) -> float | None:
-    return (
-        data.usage_periods[0].total_cost_including_sewerage
-        if data.usage_periods else None
-    )
+    month = _current_month(data)
+    return month.total_cost_including_sewerage if month else None
 
 
 def _ytd_consumption(data: PropertyData) -> float | None:

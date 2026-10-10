@@ -48,6 +48,7 @@ except ImportError:  # HA < 2025.10
 
 if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
+    from pyyorkshirewater import YearlyConsumption
 
     from .coordinator import PropertyData
 
@@ -162,8 +163,20 @@ def _merge_daily(acct: dict[str, Any], property_data: PropertyData) -> None:
 
 
 def _merge_monthly(acct: dict[str, Any], property_data: PropertyData) -> None:
-    """Fold the yearly-consumption monthly breakdown into the ledger."""
-    yearly = property_data.yearly_consumption
+    """Fold the yearly-consumption monthly breakdowns into the ledger.
+
+    The previous year is only present in January. Merging it lets
+    December's late-arriving readings still reach its monthly bucket.
+    """
+    for yearly in (
+        property_data.previous_yearly_consumption,
+        property_data.yearly_consumption,
+    ):
+        _merge_year(acct, yearly)
+
+
+def _merge_year(acct: dict[str, Any], yearly: YearlyConsumption | None) -> None:
+    """Fold one year's monthly breakdown into the ledger."""
     if yearly is None or not yearly.year or not yearly.monthly_consumption:
         return
     monthly = acct.setdefault("monthly", {})

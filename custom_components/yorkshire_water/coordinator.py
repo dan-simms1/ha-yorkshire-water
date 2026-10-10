@@ -43,7 +43,6 @@ from pyyorkshirewater import (
     MeterDetails,
     MeterStatus,
     Property,
-    UsagePeriod,
     YearlyConsumption,
     YorkshireWaterAPIError,
     YorkshireWaterAuthError,
@@ -119,9 +118,11 @@ class PropertyData:
     meter_status: MeterStatus = MeterStatus.NO_METER
     meter_details: MeterDetails | None = None
     current_consumption: CurrentConsumption | None = None
-    usage_periods: list[UsagePeriod] = field(default_factory=list)
     daily_points: list[Any] = field(default_factory=list)
     yearly_consumption: YearlyConsumption | None = None
+    # Only fetched in January, so December's late readings still reach
+    # the monthly statistics after the year rolls over.
+    previous_yearly_consumption: YearlyConsumption | None = None
 
 
 @dataclass(slots=True)
@@ -641,7 +642,11 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
             http_client=http_client,
         )
         try:
-            await client.login()
+            # refresh_token() runs the same silent renewal as login()
+            # without login()'s unscoped meter-details probe, which YW
+            # has rejected with HTTP 400 since 2026-08. Every per-property
+            # call below is scoped explicitly, so the probe bought nothing.
+            await client.refresh_token()
             customer = await client.get_customer()
             properties = await client.iter_properties()
             property_snapshots: list[PropertyData] = []
@@ -744,9 +749,9 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
 
         meter_status = _derive_meter_status(details, consumption)
 
-        usage: list[UsagePeriod] = []
         daily: list[Any] = []
         yearly: YearlyConsumption | None = None
+        previous_yearly: YearlyConsumption | None = None
         if meter_status is MeterStatus.LIVE:
             # Fetch each endpoint independently so a failure in one (most
             # likely /daily-consumption, which still rejects every param
@@ -756,11 +761,9 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
             # error - get_daily_consumption raises it when the library
             # can't derive move_in_date, and we don't want one
             # endpoint's pre-flight failure to kill the others.
-            try:
-                usage = await client.get_your_usage(meter_reference=meter_ref)
-            except (YorkshireWaterAPIError, YorkshireWaterMeterNotReadyError) as err:
-                LOGGER.debug("your-usage fetch failed for %s: %s",
-                             prop.display_account_reference, err)
+            # /your-usage is not fetched: it returns the same per-month
+            # figures as /yearly-consumption (verified 2026-10-10), and
+            # the month-to-date sensors now read the yearly breakdown.
             try:
                 # YW requires moveInDate (the customer's account start
                 # date at the property) and moveOutDate. Passing them
@@ -795,18 +798,26 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
             except (YorkshireWaterAPIError, YorkshireWaterMeterNotReadyError) as err:
                 LOGGER.debug("daily-consumption fetch failed for %s: %s",
                              prop.display_account_reference, err)
+            today = dt_util.now().date()
             try:
-                # The yearly endpoint needs `year` as a query param.
-                # Use the current-consumption's latest_data_date if we
-                # have one, otherwise fall back to the calendar year of
-                # the meter-details `currentDate`.
-                year = _resolve_consumption_year(details, consumption)
                 yearly = await client.get_yearly_consumption(
-                    year=year, meter_reference=meter_ref,
+                    year=today.year, meter_reference=meter_ref,
                 )
             except (YorkshireWaterAPIError, YorkshireWaterMeterNotReadyError) as err:
                 LOGGER.debug("yearly-consumption fetch failed for %s: %s",
                              prop.display_account_reference, err)
+            if today.month == 1:
+                # YW publishes readings days late, so the last days of
+                # December only arrive in January. Without this the
+                # December monthly bucket would freeze at its last
+                # December poll.
+                try:
+                    previous_yearly = await client.get_yearly_consumption(
+                        year=today.year - 1, meter_reference=meter_ref,
+                    )
+                except (YorkshireWaterAPIError, YorkshireWaterMeterNotReadyError) as err:
+                    LOGGER.debug("previous-year consumption fetch failed for %s: %s",
+                                 prop.display_account_reference, err)
 
         # Daily-feed gap resilience: YW's daily-consumption endpoint
         # intermittently returns nothing even when the rest of the poll
@@ -830,9 +841,9 @@ class YorkshireWaterCoordinator(DataUpdateCoordinator[YorkshireWaterCoordinatorD
             meter_status=meter_status,
             meter_details=details,
             current_consumption=consumption,
-            usage_periods=usage,
             daily_points=daily,
             yearly_consumption=yearly,
+            previous_yearly_consumption=previous_yearly,
         )
 
     def _previous_daily_points(self, account_ref: str | None) -> list[Any]:
@@ -866,24 +877,6 @@ def _derive_meter_status(
     if consumption and consumption.is_meter_bau:
         return MeterStatus.LIVE
     return MeterStatus.PENDING_ACTIVATION
-
-
-def _resolve_consumption_year(
-    details: MeterDetails | None,
-    consumption: CurrentConsumption | None,
-) -> int:
-    """Pick the year to ask /yearly-consumption about.
-
-    Prefers the year of the latest reading the meter has actually
-    produced, since asking about a year with no data returns an empty
-    response. Falls back to the meter-details `currentDate`, then to
-    the HA host's current year.
-    """
-    if consumption and consumption.latest_data_date:
-        return consumption.latest_data_date.year
-    if details and details.current_date:
-        return details.current_date.year
-    return datetime.now().year
 
 
 def _parse_refresh_time(value: str | object) -> time:

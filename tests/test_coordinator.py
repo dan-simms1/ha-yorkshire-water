@@ -170,3 +170,68 @@ async def test_daily_fetch_survives_meter_details_without_start_date(
 
     coordinator = entry.runtime_data.coordinator
     assert coordinator.data.properties[0].daily_points
+
+
+async def test_refresh_skips_login_probe(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """Polls renew via refresh_token(), not login().
+
+    login() fires an unscoped meter-details probe that YW has rejected
+    with HTTP 400 since 2026-08. Every per-property call is scoped.
+    """
+    entry = _entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert mock_client_live.refresh_token.await_count >= 1
+    mock_client_live.login.assert_not_awaited()
+
+
+async def test_previous_year_fetched_only_in_january(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    """December's late readings arrive in January, so fetch both years then."""
+    from datetime import datetime
+
+    from homeassistant.util import dt as dt_util
+
+    entry = _entry(hass)
+    tz = dt_util.get_default_time_zone()
+    with patch(
+        "custom_components.yorkshire_water.coordinator.dt_util.now",
+        return_value=datetime(2027, 1, 3, 9, 0, tzinfo=tz),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    years = sorted(
+        c.kwargs["year"] for c in mock_client_live.get_yearly_consumption.await_args_list
+    )
+    assert years == [2026, 2027]
+
+
+async def test_previous_year_not_fetched_outside_january(
+    hass: HomeAssistant,
+    mock_client_live: MagicMock,
+) -> None:
+    from datetime import datetime
+
+    from homeassistant.util import dt as dt_util
+
+    entry = _entry(hass)
+    tz = dt_util.get_default_time_zone()
+    with patch(
+        "custom_components.yorkshire_water.coordinator.dt_util.now",
+        return_value=datetime(2026, 10, 10, 9, 0, tzinfo=tz),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    years = [
+        c.kwargs["year"] for c in mock_client_live.get_yearly_consumption.await_args_list
+    ]
+    assert years
+    assert set(years) == {2026}

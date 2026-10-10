@@ -53,10 +53,11 @@ def _point(day: date, litres: Any = None, cost: Any = None, missing: bool = Fals
     return DailyConsumptionPoint.from_api(payload)
 
 
-def _data(points, yearly=None) -> PropertyData:
+def _data(points, yearly=None, previous_yearly=None) -> PropertyData:
     return PropertyData(
         property=_property(),
         meter_status=MeterStatus.LIVE,
+        previous_yearly_consumption=previous_yearly,
         daily_points=points,
         yearly_consumption=yearly,
     )
@@ -145,3 +146,31 @@ async def test_corrupt_ledger_does_not_raise(hass: HomeAssistant) -> None:
         )
     assert isinstance(store.data[ACCOUNT], dict)
     assert "daily" in store.data[ACCOUNT]
+
+
+async def test_previous_year_completes_december(hass: HomeAssistant) -> None:
+    """In January the previous year's breakdown updates December's bucket."""
+    store = _MemoryStore()
+    store.data = {ACCOUNT: {"daily": {}, "monthly": {"2026-12-01": [20000.0, 90.0]}}}
+    previous = YearlyConsumption.from_api({
+        "year": 2026,
+        "monthlyConsumption": [
+            {"month": "12", "totalConsumptionLitres": "24000",
+             "totalCostIncludingSewerage": 108.0},
+        ],
+    })
+    current = YearlyConsumption.from_api({
+        "year": 2027,
+        "monthlyConsumption": [
+            {"month": "01", "totalConsumptionLitres": "1500",
+             "totalCostIncludingSewerage": 7.0},
+        ],
+    })
+    with patch(_STORE_PATCH, return_value=store), patch(_STAT_PATCH):
+        await async_import_property_statistics(
+            hass, "e1", _data([], current, previous),
+        )
+
+    monthly = store.data[ACCOUNT]["monthly"]
+    assert monthly["2026-12-01"] == [24000.0, 108.0]
+    assert monthly["2027-01-01"] == [1500.0, 7.0]
